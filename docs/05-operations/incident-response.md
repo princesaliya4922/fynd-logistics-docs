@@ -16,9 +16,35 @@ sidebar_position: 5
 | Level | Description | Response Time |
 |-------|-------------|--------------|
 | P1 | Production down, all merchants affected | Immediate |
-| P2 | Major feature broken (e.g., fulfillment failing for all stores) | < 1 hour |
-| P3 | Feature degraded (e.g., slow response times) | < 4 hours |
-| P4 | Minor issue, workaround available | Next sprint |
+| P2 | Major feature broken (fulfillment/billing/webhooks broadly failing) | < 1 hour |
+| P3 | Feature degraded or partially failing | < 4 hours |
+| P4 | Minor issue with workaround | Next sprint |
+
+---
+
+## Triage Flow
+
+```mermaid
+flowchart TD
+    A[Alert triggered: Sentry/PagerDuty/merchant report] --> B{Production impact?}
+    B -- Yes --> C{All or most merchants impacted?}
+    C -- Yes --> D[Classify P1]
+    C -- No --> E[Classify P2]
+    B -- No --> F{Functional degradation?}
+    F -- Yes --> G[Classify P3]
+    F -- No --> H[Classify P4]
+
+    D --> I[Create incident channel + assign commander]
+    E --> I
+    G --> J[Assign owner + start runbook]
+    H --> K[Create backlog ticket]
+
+    I --> L[Run service-specific diagnosis]
+    J --> L
+    L --> M[Mitigate first]
+    M --> N[Restore service]
+    N --> O[Post-incident review + prevention tasks]
+```
 
 ---
 
@@ -26,126 +52,100 @@ sidebar_position: 5
 
 ### Fulfillments Not Processing
 
-**Symptoms:**
-- Orders created in Shopify but not showing in Fynd
+Symptoms:
+- Orders created in Shopify but not moving in Fynd
 - `shipments.status` stuck at `queued`
-- Sentry alerts for `FLP_CREATE_FAILED`
+- Errors around FLP shipment creation
 
-**Investigation:**
+Investigation:
 ```bash
-# 1. Check backend health
 curl https://shopify-backend.extensions.fynd.com/_healthz
 
-# 2. Check MongoDB for stuck orders
-db.shipments.find({ status: "queued", createdAt: { $lt: new Date(Date.now() - 10*60000) } })
+db.shipments.find({
+  status: "queued",
+  createdAt: { $lt: new Date(Date.now() - 10*60000) }
+})
 
-# 3. Check FLP API status (contact Fynd Platform team)
-
-# 4. Check if logistics is enabled for affected shop
 db.stores.findOne({ shop: "affected-store.myshopify.com" }, { logistics_status: 1 })
 ```
 
-**Fix:**
-- If FLP is down: wait for FLP recovery, shipments will auto-retry
-- If `logistics_status = "disabled"`: enable via admin panel
-- If stuck in queue: trigger manual fulfillment via Admin Extension
+Fix:
+- If FLP is down: hold and retry after FLP recovery
+- If `logistics_status` is disabled: re-enable from admin flow
+- If queue is stale: trigger controlled manual fulfillment
 
 ---
 
 ### Webhooks Not Being Received
 
-**Symptoms:**
-- Orders created in Shopify but no MongoDB records
-- No HMAC auth logs for expected topics
+Symptoms:
+- New orders in Shopify but no matching processing in backend
+- Missing webhook handler logs
 
-**Investigation:**
+Investigation:
 ```bash
-# 1. Check Shopify webhook delivery in Shopify Partners dashboard
-# Partners → Apps → Your App → Webhooks → Delivery history
+# Verify webhook delivery in Shopify Partners dashboard
+# Verify shop registration + webhook bootstrap state in DB
 
-# 2. Check if webhooks are registered correctly
-# (Should be done during install - check fyndIntegration.js ran)
 db.stores.findOne({ shop: "affected.myshopify.com" })
-
-# 3. Check ngrok in development (tunnels may have expired)
 ```
 
-**Fix:**
-- Reinstall app to re-register webhooks
-- Check `HOST` env var matches actual public URL
-
----
-
-### Merchants Getting "Region Not Supported"
-
-**Symptoms:**
-- Merchant reports app not loading
-- They see "not available in your region" error
-
-**Investigation:**
-```javascript
-// Check merchant's store country
-// In Shopify Admin: Settings → Store details → Store address → Country
-```
-
-**Fix:**
-- Merchant needs to update their Shopify store country to India
-- This is a valid business restriction — app is India-only
+Fix:
+- Re-run install/bootstrap flow for affected shop
+- Confirm public callback URL/HOST values are correct
 
 ---
 
 ### Billing Cron Not Running
 
-**Symptoms:**
-- Subscriptions have past `billingCycleEnd` but no Usage Records created
-- Merchants complaining about wrong billing
+Symptoms:
+- `billingCycleEnd` in past but no usage records
+- Billing drift reports from merchants
 
-**Investigation:**
+Investigation:
 ```bash
-# Check last cron execution
-# Look for cron job logs in Kubernetes
 kubectl logs -n ext -l job-name=shopify-backend-billing-cron --previous
 
-# Check subscriptions that should have been billed
 db.subscriptions.find({
   status: "active",
   billingCycleEnd: { $lt: new Date() }
 })
 ```
 
-**Fix:**
-- Run billing manually: `GET /config/billingCron`
-- Or run cron process directly: `MODE=cron CRON_JOB=billing_trigger node server.js`
+Fix:
+- Trigger billing manually via `GET /config/billingCron`
+- Run cron process with `MODE=cron CRON_JOB=billing_trigger node server.js`
 
 ---
 
 ### MongoDB Connection Issues
 
-**Symptoms:**
-- 500 errors on all endpoints
-- Log: `MongoNetworkError: connect ECONNREFUSED`
+Symptoms:
+- Widespread 5xx errors
+- `MongoNetworkError` or connection timeout spikes
 
-**Fix:**
-- Check MongoDB cluster status (Atlas dashboard or internal monitoring)
-- Verify `MONGO_SHOPIFY_BACKEND_READ_WRITE` connection string is correct
-- Restart pods if connection pool is corrupted: `kubectl rollout restart deployment shopify-backend`
+Fix:
+- Check Mongo cluster health
+- Validate connection strings and secret injection
+- Restart impacted deployments if pools are broken:
+  `kubectl rollout restart deployment shopify-backend`
 
 ---
 
 ## Escalation Path
 
-1. On-call engineer (PagerDuty)
+1. On-call engineer
 2. Team lead
-3. Platform infrastructure team (MongoDB/Redis/Kubernetes issues)
-4. Fynd Platform team (FLP/OMS/Central API issues)
-5. Shopify Partner support (Shopify platform issues)
+3. Platform infrastructure team (Kubernetes/Mongo/Redis)
+4. Fynd platform team (FLP/Central/extension APIs)
+5. Shopify partner support (Shopify platform issues)
 
 ---
 
 ## Post-Incident Process
 
-After every P1/P2 incident:
-1. Write a brief post-mortem (what happened, root cause, fix, prevention)
-2. Create a ticket for any long-term fixes
-3. Update monitoring/alerts if the incident could have been detected earlier
-4. Update this runbook with the new scenario if applicable
+After each P1/P2:
+1. Publish a short post-mortem (timeline, root cause, impact, mitigation).
+2. Create prevention tickets with owner + due date.
+3. Add/adjust alerts for earlier detection.
+4. Update this runbook with any new incident pattern.

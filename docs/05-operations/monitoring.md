@@ -147,12 +147,12 @@ All three services use **Winston** for structured JSON logging.
 
 | Metric | Normal Range | Alert Threshold |
 |--------|-------------|----------------|
-| HTTP 5xx rate | < 0.1% | > 1% |
-| Webhook processing time | < 5s | > 30s |
-| MongoDB query time | < 100ms | > 1s |
-| Redis latency | < 10ms | > 100ms |
-| FLP API response time | < 2s | > 10s |
-| Billing cron duration | < 5 min | > 30 min |
+| HTTP 5xx rate | at most 0.1% | over 1% |
+| Webhook processing time | at most 5s | over 30s |
+| MongoDB query time | at most 100ms | over 1s |
+| Redis latency | at most 10ms | over 100ms |
+| FLP API response time | at most 2s | over 10s |
+| Billing cron duration | at most 5 min | over 30 min |
 
 ---
 

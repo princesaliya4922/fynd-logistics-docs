@@ -9,7 +9,7 @@ sidebar_position: 5
 > **Status:** Approved
 > **Last Updated:** 2026-03-23
 
-The Fynd Shopify Ecosystem uses multiple authentication mechanisms for different scenarios.
+The Fynd Shopify ecosystem uses different authentication mechanisms per interaction type (install, browser API calls, webhooks, internal admin routes, and platform-to-platform calls).
 
 ---
 
@@ -17,203 +17,195 @@ The Fynd Shopify Ecosystem uses multiple authentication mechanisms for different
 
 Used when a merchant installs either app.
 
-### Flow
+### Sequence
 
-```
-1. Merchant clicks "Add app" in Shopify App Store
-         ↓
-2. Shopify redirects to app's /api/auth
-   (with shop domain as query param)
-         ↓
-3. App redirects merchant to Shopify OAuth consent screen
-   (scopes requested: read_orders, write_fulfillments, etc.)
-         ↓
-4. Merchant approves → Shopify redirects to /api/auth/callback
-   with authorization code
-         ↓
-5. App exchanges code for access token
-   (via @shopify/shopify-app-express)
-         ↓
-6. Access token stored in:
-   - SQLite (Promise app) or Redis (Logistics app)
-         ↓
-7. fyndIntegration.js fires:
-   - Registers store with shopify-backend
-   - Creates webhooks
-         ↓
-8. User redirected to app dashboard in Shopify Admin
+```mermaid
+sequenceDiagram
+    participant Merchant
+    participant Shopify
+    participant App as Promise/Logistics App Server
+    participant SessionStore as SQLite or Redis
+    participant Backend as shopify-backend
+
+    Merchant->>Shopify: Click "Install app"
+    Shopify->>App: GET /api/auth?shop=... 
+    App->>Shopify: Redirect to OAuth consent
+    Shopify-->>App: /api/auth/callback?code=...&shop=...
+    App->>Shopify: Exchange code for access token
+    Shopify-->>App: Access token + shop context
+    App->>SessionStore: Persist Shopify session
+    App->>Backend: Register shop + bootstrap webhooks
+    App-->>Merchant: Redirect to embedded dashboard
 ```
 
 ### Session Storage
 
-| App | Storage | Library | Session Key |
-|-----|---------|---------|-------------|
-| Promise | SQLite file (`database.sqlite`) | `@shopify/shopify-app-session-storage-sqlite` | Auto-managed |
-| Logistics | Redis | `@shopify/shopify-app-session-storage-redis` | `shopify_logistics_session_*` |
-
-On **app uninstall**, Logistics app webhook handler deletes all Redis sessions for that shop.
+| App | Storage | Library | Notes |
+|-----|---------|---------|-------|
+| Promise | SQLite (`database.sqlite`) | `@shopify/shopify-app-session-storage-sqlite` | Simpler setup, weaker horizontal scale |
+| Logistics | Redis | `@shopify/shopify-app-session-storage-redis` | Better for multi-replica app servers |
 
 ---
 
-## 2. Session Token Auth (Frontend → Backend API calls)
+## 2. Session Token Auth (Frontend -> Backend)
 
-Used when the React frontend makes API calls to `shopify-backend`.
+Used for React frontend/API-extension calls to backend-proxied APIs.
 
-### Flow
+### Sequence
 
-```
-React component needs to call /api/endpoint
-         ↓
-useAuthenticatedFetch() / useLogisticsApi() hook:
-  1. Calls getSessionToken() from @shopify/app-bridge
-     → Returns a short-lived JWT (valid ~60s)
-         ↓
-  2. Attaches to request:
-     Authorization: Bearer <shopify_session_jwt>
-         ↓
-shopify-backend receives request
-  1. shopifySessionAuth middleware extracts Bearer token
-  2. Decodes JWT (signed by Shopify using app's API secret)
-  3. Extracts:
-     - dest: "https://store-name.myshopify.com" (shop domain)
-     - aud: "api_key_here" (which app made the request)
-  4. Validates aud matches configured API key
-  5. Looks up store in MongoDB by shop domain
-  6. Attaches req.shop, req.store to request
-         ↓
-Controller has access to shop identity
+```mermaid
+sequenceDiagram
+    participant FE as React App / Extension
+    participant AB as Shopify App Bridge
+    participant B as shopify-backend
+    participant DB as MongoDB
+
+    FE->>AB: getSessionToken()
+    AB-->>FE: Short-lived JWT (~60s)
+    FE->>B: Authorization: Bearer <jwt>
+    B->>B: Verify JWT signature and audience
+    B->>DB: Resolve store by shop domain
+    alt valid token + known store
+        B-->>FE: 200 + payload
+    else invalid/expired token
+        B-->>FE: 401 Unauthorized
+        FE->>AB: Refresh token and retry once
+    end
 ```
 
-### Token Refresh
+### Token Validation Rules
 
-- Session tokens expire every ~60 seconds
-- If backend returns 401, `useLogisticsApi` hook automatically:
-  1. Calls `getSessionToken()` for a fresh token
-  2. Retries the original request once
-  3. If still 401, throws error
+1. Extract Bearer token from `Authorization` header.
+2. Verify signature using app-specific API secret.
+3. Validate `aud` (API key) against app type (`promise` or `logistics`).
+4. Resolve `dest` shop domain and load store context.
+5. Reject unknown store or invalid token with `401`.
 
-### Two App Instances
+### Two App Middleware Variants
 
-The backend uses a **factory function** `createSessionAuth(appType)` to create app-specific middleware:
+- `createSessionAuth('promise')`
+- `createSessionAuth('logistics')`
 
-```javascript
-// For logistics app endpoints
-const shopifyLogisticsSessionAuth = createSessionAuth('logistics')
-// Verifies against shopify_app.logistics_api_key + logistics_api_secret
-
-// For promise app endpoints
-const shopifyPromiseSessionAuth = createSessionAuth('promise')
-// Verifies against shopify_app.promise_api_key + promise_api_secret
-```
+This keeps Promise and Logistics app credentials isolated.
 
 ---
 
 ## 3. Shopify Webhook HMAC Verification
 
-Used when Shopify sends webhook events to `shopify-backend`.
+Used for incoming Shopify webhooks.
 
-### Flow
+### Sequence
 
+```mermaid
+sequenceDiagram
+    participant Shopify
+    participant B as shopify-backend
+
+    Shopify->>B: POST /webhook/store/:shop/:topic?app=...
+    Note over Shopify,B: Includes X-Shopify-Hmac-Sha256
+    B->>B: Read raw body + select app secret
+    B->>B: Compute HMAC-SHA256(rawBody)
+    alt HMAC match
+        B->>B: Route to webhook handler
+        B-->>Shopify: 200 OK
+    else HMAC mismatch
+        B-->>Shopify: 401 Unauthorized
+    end
 ```
-Shopify fires POST /webhook/store/:shop/:topic
-         ↓
-shopifyHmacAuth middleware:
-  1. Reads X-Shopify-Hmac-Sha256 header
-  2. Reads raw request body (captured before JSON parsing)
-  3. Determines which app secret to use:
-     - ?app=logistics → shopify_app.logistics_api_secret
-     - ?app=promise  → shopify_app.promise_api_secret
-  4. Computes HMAC-SHA256 of raw body using the app secret
-  5. Timing-safe comparison (prevents timing attacks):
-     crypto.timingSafeEqual(computed, received)
-  6. If mismatch → 401 Unauthorized
-  7. If match → passes to controller
-```
 
-> **Why timing-safe?** A naive `===` comparison leaks timing information — an attacker can determine how many bytes match by measuring response time. `timingSafeEqual` takes constant time regardless of match length.
+### App Secret Selection
+
+- `?app=promise` -> `shopify_app.promise_api_secret`
+- `?app=logistics` -> `shopify_app.logistics_api_secret`
+
+`crypto.timingSafeEqual` is used to avoid timing attacks.
 
 ---
 
-## 4. Basic Auth (Internal/Admin APIs)
+## 4. Basic Auth (Internal/Admin Routes)
 
-Used for internal admin APIs and certain data management endpoints.
+Used for admin/internal control routes.
 
-```javascript
-// basicAuth.js
+```http
 Authorization: Basic base64(username:password)
 ```
 
-Credentials configured via:
-- `BOLTIC_USERNAME` + `BOLTIC_PASSWORD` (admin routes)
+Credentials are read from environment (`BOLTIC_USERNAME`, `BOLTIC_PASSWORD`).
 
-Routes protected:
-- `/logistics/admin/*` — Admin dashboard APIs
-- `/logistics/admin/api/promise/*` — Promise admin APIs
-- `/map/mapInventories` — Inventory mapping
-- `/webhook/extension/status` — Extension status webhooks
+Typical protected surfaces:
+- `/logistics/admin/*`
+- `/logistics/admin/api/promise/*`
+- `/map/mapInventories`
+- `/webhook/extension/status`
 
 ---
 
-## 5. OTP Verification (Account Linking)
+## 5. OTP Verification (Logistics Account Linking)
 
-Used in the Logistics app to link a Shopify store to an existing Fynd company account.
+Used when linking a Shopify merchant to an existing Fynd company.
 
-### Flow
+### Sequence
 
-```
-Merchant enters company email address
-         ↓
-POST /logistics/otp/send
-  → shopify-backend calls Fynd Central:
-    POST /service/integration/auth/v1.0/users
-    with email → triggers OTP email
-         ↓
-Merchant receives OTP (6 digits) in email
-         ↓
-POST /logistics/otp/verify
-  → shopify-backend calls Fynd Central:
-    verify OTP → returns company list
-         ↓
-Merchant selects company (dropdown)
-         ↓
-Account linking complete → proceeds to full setup
+```mermaid
+sequenceDiagram
+    participant Merchant
+    participant LogisticsApp
+    participant Backend as shopify-backend
+    participant Central as Fynd Central API
+
+    Merchant->>LogisticsApp: Enter email and request OTP
+    LogisticsApp->>Backend: POST /logistics/otp/send
+    Backend->>Central: Trigger OTP for email
+    Merchant->>LogisticsApp: Enter OTP
+    LogisticsApp->>Backend: POST /logistics/otp/verify
+    Backend->>Central: Verify OTP
+    Central-->>Backend: Company list
+    Backend-->>LogisticsApp: Companies + next setup state
 ```
 
-OTP constants (in `web/frontend/constants.js`):
+Runtime constants:
 - `OTP_LENGTH = 6`
-- `RESEND_TIMER_DURATION = 10` (seconds before resend allowed)
+- `RESEND_TIMER_DURATION = 10` seconds
 
 ---
 
-## 6. Fynd Extension API Authentication
+## 6. Backend -> Fynd APIs
 
-When the backend calls Fynd platform APIs (FLP, Fynd Central), it authenticates using:
+For Fynd platform APIs (Central/FLP/extension APIs), backend uses API key/secret or bearer admin token.
 
-```javascript
-// HTTP headers on all Fynd API calls:
-{
-  'x-api-key': config.get('extension_api_key'),
-  'x-api-secret': config.get('extension_api_secret'),
-  // or
-  'Authorization': `Bearer ${adminToken}`
-}
+```http
+x-api-key: <extension_api_key>
+x-api-secret: <extension_api_secret>
 ```
 
-Admin tokens are obtained via:
+or
+
+```http
+Authorization: Bearer <admin_token>
 ```
-POST /service/panel/authentication/v1.0/admin/oauth/token
-  with client_credentials grant
-```
+
+Admin token is fetched via panel OAuth client-credentials flow.
+
+---
+
+## 7. Failure and Retry Semantics
+
+| Flow | Retry Behavior | Idempotency Consideration |
+|------|----------------|---------------------------|
+| Session token | frontend retries once after token refresh | Safe, read-mostly API calls |
+| Shopify webhooks | Shopify retries failed deliveries | Handlers must handle duplicate deliveries |
+| FLP/Fynd webhooks | Sender retries non-2xx | Shipment update processing must be idempotent |
+| OTP send/verify | User-initiated retries | Throttle and expiration windows apply |
 
 ---
 
 ## Summary
 
-| Mechanism | Used For | Verified By |
-|-----------|----------|-------------|
-| Shopify OAuth | App installation | `@shopify/shopify-app-express` |
-| Session Token (JWT) | Frontend → backend API calls | `shopifySessionAuth` middleware |
-| HMAC-SHA256 | Shopify webhook verification | `shopifyHmacAuth` middleware |
-| Basic Auth | Admin APIs + internal routes | `basicAuth` middleware |
-| Email OTP | Fynd account linking | Fynd Central API |
-| API Key/Secret | Backend → Fynd API calls | Fynd platform validates |
+| Mechanism | Used For | Trust Boundary |
+|-----------|----------|----------------|
+| OAuth | app install | Shopify ↔ app server |
+| Session JWT | browser/extension -> backend | Shopify App Bridge token chain |
+| HMAC | Shopify webhook authenticity | raw-body signature verification |
+| Basic Auth | internal admin routes | internal operators/tools |
+| OTP | account linking | Fynd identity verification |
+| API key/secret | backend -> Fynd platform | server-to-server integration |

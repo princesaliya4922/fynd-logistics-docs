@@ -15,67 +15,97 @@ All deployment environments for the Fynd Shopify Ecosystem.
 
 ## Environment Overview
 
-| Environment | Cluster Name | Purpose | Deployed By |
-|-------------|-------------|---------|-------------|
-| Development | Local / ngrok | Individual developer testing | Developer manually |
-| SIT | `fyndz0` | System Integration Testing | CI pipeline |
-| UAT | `fyndz5` | User Acceptance Testing | CI pipeline |
-| Pexar (extra UAT) | `fyndz6–z9` | Additional test environments for Logistics | CI pipeline |
-| Production | `fynd/m2` | Live merchant traffic | Manual promotion |
+| Environment | Realm | Purpose | Primary Source of Truth |
+|-------------|-------|---------|--------------------------|
+| Development | local | Individual developer testing | Local `.env` + Shopify CLI configs |
+| SIT | `fyndz0/m1` | System Integration Testing | `fik-fynd-extensions/environments/fynd/fyndz0/m1/` |
+| UAT | `fyndz5/m1` | User Acceptance Testing | `fik-fynd-extensions/environments/fynd/fyndz5/m1/` |
+| Extra logistics environments | `fyndz6/m1`, `fyndz7/m1`, `fyndz8/m1`, `fyndz9/m1` | Logistics extension/partner integration testing | `fik-fynd-extensions/environments/fynd/fyndz6..z9/m1/` |
+| Production | `fynd/m2` | Live merchant traffic | `fik-fynd-extensions/environments/fynd/fynd/m2/` |
 
 ---
 
-## Service URLs by Environment
+## Realm Domain Map (FIK)
+
+| Realm | `Common.Domains.FyndPlatform` | `Common.ApiHost` |
+|------|-------------------------------|------------------|
+| `fyndz0` | `sit.fyndx1.de` (from configured service hosts) | (realm-specific) |
+| `fyndz5` | `uat.fyndx1.de` (from configured service hosts) | (realm-specific) |
+| `fyndz6` | `pexar.io` | `api.pexar.io` |
+| `fyndz7` | `fyndz7.pexar.io` | `api.fyndz7.pexar.io` |
+| `fyndz8` | `rhos.fyndx1.de` | `api.konnect.rhos.fyndx1.de` |
+| `fyndz9` | `fyndz9.fyndx1.de` | `api.konnect.fyndz9.fyndx1.de` |
+| `fynd` | `fynd.com` | (production API host family) |
+
+---
+
+## Service URLs (Explicitly Configured)
 
 ### shopify-pincode-checker (Fynd Promise)
 
-| Environment | URL |
-|-------------|-----|
-| Development | `http://localhost:3000` (via ngrok for webhooks) |
-| SIT | `https://pincode-checker.extensions.sit.fyndx1.de` |
-| UAT | `https://pincode-checker.extensions.uat.fyndx1.de` |
-| Production | `https://pincode-checker.extensions.fynd.com` |
+| Environment | URL | Source |
+|-------------|-----|--------|
+| Development | `http://localhost:3000` | local run |
+| SIT (`fyndz0`) | `https://pincode-checker.extensions.sit.fyndx1.de` | `.../fyndz0/m1/projects/shopify-app.yaml` (`HOST`) |
+| UAT (`fyndz5`) | `https://pincode-checker.extensions.uat.fyndx1.de` | `.../fyndz5/m1/projects/shopify-app.yaml` (`HOST`) |
+| Production (`fynd/m2`) | `https://pincode-checker.extensions.fynd.com` | `.../fynd/m2/projects/shopify-app.yaml` (`HOST`) |
 
 ### shopify-backend
 
-| Environment | URL |
-|-------------|-----|
-| Development | `http://localhost:8000` (via ngrok for webhooks) |
-| SIT | `https://shopify-backend.extensions.sit.fyndx1.de` |
-| UAT | `https://shopify-backend.extensions.uat.fyndx1.de` |
-| Production | `https://shopify-backend.extensions.fynd.com` |
+| Environment | URL | Source |
+|-------------|-----|--------|
+| Development | `http://localhost:8000` | local run |
+| SIT (`fyndz0`) | `https://shopify-backend.extensions.sit.fyndx1.de` | `.../fyndz0/m1/projects/shopify-app.yaml` (`BACKEND_URL`) |
+| UAT (`fyndz5`) | `https://shopify-backend.extensions.uat.fyndx1.de` | `.../fyndz5/m1/projects/shopify-app.yaml` (`BACKEND_URL`) |
+| Production (`fynd/m2`) | `https://shopify-backend.extensions.fynd.com` | `.../fynd/m2/projects/shopify-app.yaml` (`BACKEND_URL`) |
 
 ### shopify-logistics-app (Fynd Logistics)
 
-| Environment | URL |
-|-------------|-----|
-| Development | `http://localhost:3000` |
-| UAT | `https://shopify-logistics.extensions.uat.fyndx1.de` |
-| fyndz6 | `https://shopify-logistics.extensions.<fyndz6-domain>` |
-| Production | `https://shopify-logistics.extensions.fynd.com` |
+| Environment | URL | Source |
+|-------------|-----|--------|
+| Development | `http://localhost:3000` | local run |
+| UAT (`fyndz5`) | `https://shopify-logistics.extensions.uat.fyndx1.de` | `.../fyndz5/m1/projects/shopify-app.yaml` (`ShopifyLogistics.HOST`) |
 
-> **Note:** The logistics app has additional test environments (`fyndz6`–`fyndz9`) on `pexar.io` domain for more isolated testing.
+> `ShopifyLogistics` project entries are currently present in `fyndz5` only in this infra repo. There are no `ShopifyLogistics` entries in `fyndz6–z9` or `fynd/m2` under `projects/shopify-app.yaml` at the time of this doc update.
 
 ---
 
-## Shopify App Configuration per Environment
+## Logistics Partner Extension URLs (z6-z9)
+
+These environments run courier/logistics extension services (Delhivery, Dunzo, Xpressbees, etc.), not just the Shopify embedded app.
+
+| Realm | Example `EXTENSION_BASE_URL` |
+|-------|-------------------------------|
+| `fyndz6` | `https://delhivery.extensions.pexar.io` |
+| `fyndz7` | `https://delhivery.extensions.fyndz7.de` |
+| `fyndz8` | `https://delhivery.extensions.rhos.fyndx1.de` |
+| `fyndz9` | `https://delhivery.extensions.fyndz9.fyndx1.de` |
+
+Source: `fik-fynd-extensions/environments/fynd/fyndz6..z9/m1/projects/logistics.yaml`
+
+---
+
+## Shopify App Configuration Files
 
 ### Fynd Promise
 
-| Environment | Config File | Shopify App |
-|-------------|------------|-------------|
-| Production | `shopify.app.toml` | Fynd Promise (production) |
-| Testing | `shopify.app.fynd-promise-testing.toml` | Fynd Promise Testing |
-| SIT | `shopify.app.promise-sit.toml` | Fynd Promise SIT |
-| Dev | `shopify.app.promise-dev-10.toml` | Dev-10 app |
+| Config File | Typical Use |
+|-------------|-------------|
+| `shopify.app.toml` | Production Promise app |
+| `shopify.app.pincode-serviceability-test.toml` | UAT/SIT testing app |
+| `shopify.app.promise-sit.toml` | SIT app variant |
+| `shopify.app.fynd-promise-testing.toml` | Testing app variant |
+| `shopify.app.promise-dev-10.toml` | Dev app variant |
+| `shopify.app.fynd-promise-dev.toml` | Dev app variant |
 
 ### Fynd Logistics
 
-| Environment | Config File | Shopify App |
-|-------------|------------|-------------|
-| Production | `shopify.app.fynd-logistics.toml` | Fynd Logistics (production) |
-| UAT | `shopify.app.fynd-logistics-uat.toml` | Fynd Logistics UAT |
-| Dev | `shopify.app.fynd-logistics-dev.toml` | Fynd Logistics Dev |
+| Config File | Typical Use |
+|-------------|-------------|
+| `shopify.app.fynd-logistics-uat.toml` | UAT logistics app |
+| `shopify.app.fynd-logistics-dev.toml` | Dev logistics app |
+| `shopify.app.fynd-logistics-dev-devx.toml` | DevX logistics app |
+| `shopify.app.fynd-logistics.toml` | Logistics app config (currently points to a temporary Cloudflare URL; validate before production use) |
 
 ---
 
@@ -84,39 +114,28 @@ All deployment environments for the Fynd Shopify Ecosystem.
 | Environment | MongoDB | Redis |
 |-------------|---------|-------|
 | Development | Local Docker or Atlas (dev cluster) | Local Docker |
-| SIT/UAT | Shared dev MongoDB cluster | Shared dev Redis |
-| Production | `MONGO_SHOPIFY_BACKEND_READ_WRITE` (primary) + read replica | `REDIS_SHOPIFY_BACKEND_READ_WRITE` (primary) + read replica |
+| SIT/UAT | Shared non-prod cluster(s) | Shared non-prod Redis |
+| Production | `MONGO_SHOPIFY_BACKEND_READ_WRITE` (+ read replica) | `REDIS_SHOPIFY_BACKEND_READ_WRITE` (+ read replica) |
 
 ---
 
-## Environment-Specific Sentry Projects
-
-| Environment | Project DSN |
-|-------------|------------|
-| UAT (shopify-backend) | `https://397ea54267...@sentry.fynd.engineering/845` |
-| Production (shopify-backend) | `https://8777c9b24c...@o71740.ingest.us.sentry.io/4509043013713920` |
-| UAT (promise app) | `https://2f7c61c49d...@sentry.fynd.engineering/807` |
-| Production (promise app) | `https://84c2ca17ad...@o71740.ingest.us.sentry.io/4509043013124097` |
-
----
-
-## Feature Flags per Environment
+## Feature Flags by Stage
 
 | Feature | Development | SIT/UAT | Production |
 |---------|-------------|---------|------------|
-| Shopify billing test mode | ✅ | ✅ | ❌ (real charges) |
+| Shopify billing test mode | ✅ | ✅ | ❌ |
 | Debug logging | ✅ | Configurable | ❌ |
-| SSL bypass | ✅ (VPN) | ❌ | ❌ |
-| New Relic APM | ❌ | ❌ | ✅ (fyndz6+, fynd) |
+| SSL bypass (`BYPASS_SSL_VALIDATION`) | Sometimes | ❌ | ❌ |
+| New Relic APM | Optional | Optional | Enabled per env policy |
 
 ---
 
-## Promoting to Production
+## Promotion Path
 
-Production deploys are **manual** — not automatic on every push to main.
-
-1. Ensure all tests pass in UAT
-2. Get approval from tech lead
-3. Deploy via Azure Pipelines (manual trigger on `fynd/m2` environment)
-4. Verify health endpoints after deploy
-5. Monitor Sentry for 30 minutes post-deploy
+1. Merge to main -> auto deploy to SIT (`fyndz0`)
+2. Release branch/tag -> deploy to UAT (`fyndz5`)
+3. Manual promotion -> Production (`fynd/m2`)
+4. Post-deploy verification:
+   - `/_healthz`
+   - `/_readyz`
+   - Sentry and logs for 15-30 min

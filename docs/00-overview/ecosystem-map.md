@@ -9,88 +9,198 @@ sidebar_position: 2
 > **Status:** Approved
 > **Last Updated:** 2026-03-23
 
-This page shows how every component in the Fynd Shopify Ecosystem relates to each other.
+This page maps the full Fynd Shopify system: runtime components, deployment control plane, observability, and analytics pipeline.
 
 ---
 
-## High-Level Architecture
+## Whole System Diagram
 
 ```mermaid
-graph TD
-    subgraph "Shopify Platform"
-        Admin["Shopify Admin<br/>(Merchant Browser)"]
-        Storefront["Shopify Storefront<br/>(Customer Browser)"]
-        ShopifyAPI["Shopify Admin API<br/>+ Billing API"]
-        WebhookOut["Shopify Webhooks<br/>(orders, inventory, fulfillments...)"]
+graph TB
+    subgraph Clients[Clients]
+        Merchant[Merchant in Shopify Admin]
+        Customer[Customer on Storefront]
     end
 
-    subgraph "Fynd Shopify Apps (Hosted)"
-        PromiseApp["shopify-pincode-checker<br/>(Fynd Promise Frontend)<br/>React + Vite + Polaris"]
-        LogisticsApp["shopify-logistics-app<br/>(Fynd Logistics Frontend)<br/>React + Vite + Polaris"]
-        Backend["shopify-backend<br/>(Shared Node.js/Express)<br/>MongoDB + Redis"]
+    subgraph Shopify[Shopify Platform]
+        ShopifyAdmin[Shopify Admin + App Bridge]
+        ShopifyAPI[Admin API]
+        ShopifyBilling[Billing API]
+        ShopifyWebhooks[Webhook Delivery]
     end
 
-    subgraph "Shopify Extensions"
-        CheckoutExt["Checkout UI Extension<br/>(fynd-promise-checkout)<br/>Pincode checker at checkout"]
-        PDPExt["Theme Extension<br/>(fynd-promise-pdp)<br/>Pincode checker on PDP"]
-        OrderBlockExt["Admin UI Extension<br/>(fullfillment-extension)<br/>Order fulfillment block"]
-        ReturnsExt["Admin UI Extension<br/>(fynd-returns)<br/>Returns block"]
+    subgraph Apps[Fynd Shopify Apps]
+        PromiseApp[shopify-pincode-checker]
+        LogisticsApp[shopify-logistics-app]
+        Backend[shopify-backend API]
     end
 
-    subgraph "Fynd Platform"
-        FyndCentral["Fynd Central API<br/>(Company, User, Sales Channel)"]
-        FLP["FLP Platform<br/>(Fynd Logistics Platform)<br/>Shipment creation"]
-        LogisticsExt["Fynd Logistics Extension API<br/>(Delivery Partners)"]
-        ServiceabilityAPI["Serviceability API<br/>(Pincode lookup)"]
-        FDKWebhooks["Fynd Platform Webhooks<br/>(Shipment status updates)"]
+    subgraph Extensions[Shopify Extensions]
+        CheckoutExt[fynd-promise-checkout]
+        PDPExt[fynd-promise-pdp]
+        FulfillExt[fullfillment-extension]
+        ReturnsExt[fynd-returns]
     end
 
-    subgraph "Data"
-        MongoDB[(MongoDB<br/>shopify_backend DB)]
-        Redis[(Redis<br/>Session Cache)]
-        BigQuery[(Google BigQuery<br/>fynd_zenith_data)]
-        Zenith["Zenith Pipeline<br/>(transformations)"]
+    subgraph Data[State + Storage]
+        Mongo[(MongoDB\nshopify_backend)]
+        Redis[(Redis)]
+        SQLite[(SQLite\nPromise session store)]
     end
 
-    Admin -->|"OAuth install + embedded app"| PromiseApp
-    Admin -->|"OAuth install + embedded app"| LogisticsApp
-    Storefront -->|"Customer pincode check"| CheckoutExt
-    Storefront -->|"Customer pincode check"| PDPExt
+    subgraph FyndPlatform[Fynd Platform APIs]
+        CentralAPI[Fynd Central API]
+        FLP[FLP Platform]
+        Serviceability[Serviceability API]
+        LogisticsExtAPIs[Courier Extension APIs]
+        FDKEvents[Fynd/FLP outbound webhooks]
+    end
 
-    PromiseApp -->|"REST /api/*"| Backend
-    LogisticsApp -->|"REST /api/*"| Backend
-    CheckoutExt -->|"POST /location/service"| Backend
-    PDPExt -->|"POST /location/service"| Backend
-    OrderBlockExt -->|"GET /logistics/fulfill/orders/:id/status"| Backend
-    ReturnsExt -->|"POST /logistics/returns"| Backend
+    subgraph Pipeline[Analytics Pipeline]
+        Transform[Zenith transformation scripts]
+        BQ[(BigQuery\nfynd_zenith_data)]
+        DLQ[(BigQuery DLQ)]
+    end
 
-    Backend -->|"OAuth, Orders, Fulfillments,<br/>Billing API"| ShopifyAPI
-    WebhookOut -->|"HMAC verified webhooks"| Backend
+    subgraph Ops[Delivery + Operations]
+        Repos[Repos:\nshopify-backend / promise / logistics / fik / transformations]
+        CI[Azure Pipelines]
+        FIK[FIK deploy configs]
+        K8s[Kubernetes ext cluster]
+        Sentry[Sentry]
+        NewRelic[New Relic]
+        Grafana[Grafana/Prometheus]
+        PagerDuty[PagerDuty]
+    end
 
-    Backend -->|"Company, User, Account<br/>management"| FyndCentral
-    Backend -->|"Shipment creation<br/>+ tracking"| FLP
-    Backend -->|"Delivery partner<br/>configuration"| LogisticsExt
-    Backend -->|"Pincode serviceability<br/>lookup"| ServiceabilityAPI
-    FDKWebhooks -->|"Shipment status<br/>update events"| Backend
+    Merchant --> ShopifyAdmin
+    Customer --> CheckoutExt
+    Customer --> PDPExt
+    Merchant --> FulfillExt
+    Merchant --> ReturnsExt
 
-    Backend --- MongoDB
+    ShopifyAdmin --> PromiseApp
+    ShopifyAdmin --> LogisticsApp
+
+    PromiseApp --> Backend
+    LogisticsApp --> Backend
+    CheckoutExt --> Backend
+    PDPExt --> Backend
+    FulfillExt --> Backend
+    ReturnsExt --> Backend
+
+    Backend --> ShopifyAPI
+    Backend --> ShopifyBilling
+    ShopifyWebhooks --> Backend
+
+    PromiseApp --- SQLite
+    LogisticsApp --- Redis
+    Backend --- Mongo
     Backend --- Redis
 
-    MongoDB -->|"Incremental sync via updatedAt"| Zenith
-    Zenith --> BigQuery
+    Backend --> CentralAPI
+    Backend --> FLP
+    Backend --> Serviceability
+    Backend --> LogisticsExtAPIs
+    FDKEvents --> Backend
+
+    Mongo --> Transform
+    Transform --> BQ
+    Transform --> DLQ
+
+    Repos --> CI
+    CI --> FIK
+    FIK --> K8s
+    K8s --> PromiseApp
+    K8s --> LogisticsApp
+    K8s --> Backend
+
+    Backend --> Sentry
+    PromiseApp --> Sentry
+    LogisticsApp --> Sentry
+    Backend --> NewRelic
+    Backend --> Grafana
+    Sentry --> PagerDuty
+    Grafana --> PagerDuty
 ```
 
 ---
 
-## Repository → Deployment Map
+## Runtime Component Map
 
-| Repository | Deployed As | Environments |
-|-----------|-------------|-------------|
-| `shopify-pincode-checker` | `pincode-checker.extensions.*` | dev, SIT, UAT, prod |
-| `shopify-logistics-app` | `shopify-logistics.extensions.*` | dev, UAT (fyndz6–z9), prod |
-| `shopify-backend` | `shopify-backend.extensions.*` | dev, SIT, UAT, prod |
+```mermaid
+graph LR
+    subgraph ShopifyPlatform[Shopify Platform]
+        SAdmin[Merchant Admin Browser]
+        SStorefront[Customer Storefront Browser]
+        SWebhooks[Shopify Webhooks]
+        SBillingAPI[Shopify Billing API]
+    end
 
-Full environment URLs → [Operations: Environments](../05-operations/environments.md)
+    subgraph FyndApps[Fynd Shopify Apps]
+        PromiseFE[Fynd Promise Frontend\nshopify-pincode-checker]
+        LogisticsFE[Fynd Logistics Frontend\nshopify-logistics-app]
+        Backend[Shared Backend\nshopify-backend]
+    end
+
+    subgraph ShopifyExtensions[Shopify Extensions]
+        CheckoutExt[Checkout UI Extension\nfynd-promise-checkout]
+        PDPExt[Theme Extension\nfynd-promise-pdp]
+        OrderBlockExt[Admin UI Extension\nfullfillment-extension]
+        ReturnsExt[Admin UI Extension\nfynd-returns]
+    end
+
+    subgraph Fynd[Fynd Platform]
+        Central[Fynd Central API]
+        FLP[FLP Platform]
+        ServiceAPI[Serviceability API]
+        FDKWebhooks[Fynd Webhooks]
+    end
+
+    subgraph DataLayer[Data Layer]
+        Mongo[(MongoDB)]
+        Redis[(Redis)]
+        BQ[(BigQuery)]
+    end
+
+    SAdmin --> PromiseFE
+    SAdmin --> LogisticsFE
+    SStorefront --> CheckoutExt
+    SStorefront --> PDPExt
+    SAdmin --> OrderBlockExt
+    SAdmin --> ReturnsExt
+
+    PromiseFE --> Backend
+    LogisticsFE --> Backend
+    CheckoutExt --> Backend
+    PDPExt --> Backend
+    OrderBlockExt --> Backend
+    ReturnsExt --> Backend
+
+    SWebhooks --> Backend
+    SBillingAPI <--> Backend
+
+    Backend <--> Central
+    Backend <--> FLP
+    Backend <--> ServiceAPI
+    FDKWebhooks --> Backend
+
+    Backend --- Mongo
+    Backend --- Redis
+    Mongo -.-> BQ
+```
+
+---
+
+## Repository to Runtime Ownership
+
+| Repository | Deploys | Runtime Responsibility |
+|-----------|---------|------------------------|
+| `shopify-pincode-checker` | Promise embedded app + extension assets | Promise onboarding and customer-facing promise widgets |
+| `shopify-logistics-app` | Logistics embedded app + admin extension assets | Logistics onboarding and manual fulfillment/returns actions |
+| `shopify-backend` | Shared API + cron | Webhooks, fulfillment orchestration, billing, serviceability APIs |
+| `fik-fynd-extensions` | Kubernetes manifests + env overlays | Environment-specific deployment and secret wiring |
+| `transformations` | Zenith jobs | MongoDB -> BigQuery transformation and sync |
 
 ---
 
@@ -98,61 +208,54 @@ Full environment URLs → [Operations: Environments](../05-operations/environmen
 
 | Data | Owned By | Stored In |
 |------|----------|-----------|
-| Shopify session tokens | shopify-backend | SQLite (Promise) / Redis (Logistics) |
-| Merchant store config | shopify-backend | MongoDB `stores` collection |
-| Logistics setup | shopify-backend | MongoDB `logistics` collection |
-| Shipment records | shopify-backend | MongoDB `shipments` collection |
-| Order records | shopify-backend | MongoDB `orders` collection |
-| Return records | shopify-backend | MongoDB `returns` collection |
-| Subscription records | shopify-backend | MongoDB `subscriptions` collection |
-| Product mappings | shopify-backend | MongoDB `productMappings` collection |
-| Store/location mappings | shopify-backend | MongoDB `storeMappings` collection |
-| Courier partner definitions | shopify-backend | MongoDB `courierPartners` collection |
-| Fynd company/account data | Fynd Central API | Fynd Platform DB (remote) |
-| Shipment status | FLP Platform | FLP DB (remote) |
-| Analytics | Zenith Pipeline | BigQuery `fynd_zenith_data` dataset |
+| Shopify sessions (Promise) | Promise app server | SQLite |
+| Shopify sessions (Logistics) | Logistics app server | Redis |
+| Merchant/store config | backend | MongoDB `stores` |
+| Logistics setup | backend | MongoDB `logistics` + related collections |
+| Shipments | backend | MongoDB `shipments` |
+| Returns | backend | MongoDB `returns` |
+| Billing/subscriptions | backend | MongoDB `subscriptions`, `transactions`, `orders` |
+| Analytics tables | transformation pipeline | BigQuery `fynd_zenith_data.*` |
 
 ---
 
-## Request Flow: Customer Checks Pincode at Checkout
+## Critical Runtime Flows
 
-```
-Customer types pincode in checkout
-        ↓
-Checkout UI Extension (fynd-promise-checkout)
-  calls POST /location/service on shopify-backend
-        ↓
-shopify-backend looks up:
-  1. Merchant config from MongoDB (deliveryPreference, promiseView)
-  2. Warehouse location config from MongoDB (storeMappings)
-  3. Calls Fynd Serviceability API with pincode + location
-        ↓
-Returns: { serviceable: true, promiseDate: "Mon–Wed" }
-        ↓
-Extension shows "Delivery by Mon–Wed" OR blocks checkout
+### Flow A: Customer Pincode Check
+
+```mermaid
+sequenceDiagram
+    participant C as Customer
+    participant Ext as Checkout/PDP Extension
+    participant B as shopify-backend
+    participant M as MongoDB
+    participant S as Serviceability API
+
+    C->>Ext: Enter pincode
+    Ext->>B: POST /location/service
+    B->>M: Read store config + mappings
+    B->>S: Check serviceability
+    S-->>B: serviceable + promise window
+    B-->>Ext: response
+    Ext-->>C: Show promise or failure reason
 ```
 
-## Request Flow: Order Created → Fulfillment
+### Flow B: Order to Fulfillment
 
-```
-Customer places order
-        ↓
-Shopify fires orders/create webhook
-        ↓
-shopify-backend /webhook/store/:shop/orders/create
-  (HMAC verified)
-        ↓
-shopifyWebhookService processes order:
-  - Checks if logistics is enabled for shop
-  - Finds fulfillment orders for the Shopify order
-        ↓
-fulfilmentService creates shipment:
-  - Calls FLP Platform API to create shipment
-  - Stores shipment record in MongoDB
-        ↓
-FLP fires shipment status webhook
-        ↓
-shopify-backend /webhook/flp
-  - Updates Shopify fulfillment status
-  - Updates MongoDB shipment record
+```mermaid
+sequenceDiagram
+    participant Shopify as Shopify Webhooks
+    participant B as shopify-backend
+    participant M as MongoDB
+    participant FLP as FLP Platform
+
+    Shopify->>B: orders/create webhook
+    B->>B: Verify HMAC + validate app secret
+    B->>M: Check store/logistics eligibility
+    B->>FLP: Create shipment
+    FLP-->>B: shipment created
+    B->>M: Persist shipment record
+    FLP->>B: Shipment status webhook
+    B->>M: Update shipment state
+    B->>Shopify: Update fulfillment tracking/status
 ```

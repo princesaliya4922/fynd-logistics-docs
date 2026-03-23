@@ -126,6 +126,29 @@ The app tracks your setup progress in Jotai atoms. The current view is stored in
 
 ## Troubleshooting
 
+### Link Existing Account Troubleshooting Flow
+
+```mermaid
+flowchart TD
+    A[Merchant clicks Link Existing Account] --> B[Enter email and send OTP]
+    B --> C{OTP received?}
+    C -- No --> D[Check spam and resend after timer]
+    D --> E{Still not received?}
+    E -- Yes --> F[Verify email belongs to Fynd company user]
+    E -- No --> G[Enter OTP]
+    C -- Yes --> G[Enter OTP]
+
+    G --> H{OTP valid?}
+    H -- No --> I[Re-request OTP and retry]
+    H -- Yes --> J[Load companies]
+    J --> K{Company visible?}
+    K -- No --> L[Use Create New Account path or check access in Fynd Central]
+    K -- Yes --> M[Select company and sales channel]
+    M --> N[Proceed to setup configuration]
+```
+
+### Common Issues
+
 | Issue | Solution |
 |-------|---------|
 | OTP not received | Check spam folder; request resend after 10 seconds |

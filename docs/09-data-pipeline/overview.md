@@ -9,21 +9,23 @@ sidebar_position: 1
 > **Status:** Approved
 > **Last Updated:** 2026-03-23
 
-How `shopify-backend`'s MongoDB data is synced to Google Cloud BigQuery for analytics.
+How `shopify-backend` MongoDB data is synced to BigQuery for analytics.
 
 ---
 
-## Architecture
+## End-to-End Pipeline Diagram
 
-```
-MongoDB (shopify_backend database)
-         ↓
-    Zenith Pipeline
-    (transformation scripts)
-         ↓
-Google Cloud BigQuery
-dataset: fynd_zenith_data
-project: fynd-jio-commerceml-prod
+```mermaid
+flowchart LR
+    A[MongoDB: shopify_backend collections] --> B[Incremental extractor\nupdatedAt > lastSyncTime]
+    B --> C[transformation.js\nfield mapping + normalization]
+    C --> D{Schema valid?}
+    D -- Yes --> E[BigQuery\nfynd_zenith_data.*]
+    D -- No --> F[DLQ table\ntemp_zenith_data.dbe_dlq]
+    E --> G[Analytics consumers\nLooker/SQL/ops reporting]
+    F --> H[Fix transform/schema]
+    H --> I[DLQ reprocess via pipeline manager]
+    I --> C
 ```
 
 ---
@@ -33,19 +35,17 @@ project: fynd-jio-commerceml-prod
 | Component | Technology |
 |-----------|-----------|
 | Source | MongoDB (Zenith read replica) |
-| Transformation | JavaScript scripts (Node.js) |
-| Orchestrator | **Boltic** (Fynd's internal pipeline orchestrator) |
-| Destination | Google Cloud BigQuery |
-| Management CLI | `cli_pipeline_manager.js` |
-| Error tracking | BigQuery DLQ (Dead Letter Queue) |
+| Transformation | Node.js JavaScript scripts |
+| Orchestrator | Boltic |
+| Destination | Google BigQuery |
+| Management | `cli_pipeline_manager.js` |
+| Failure sink | BigQuery DLQ |
 
 ---
 
 ## Sync Strategy
 
-**Type:** Incremental sync (not full reload, not CDC/Change Data Capture)
-
-All `shopify_backend` collections use the `updatedAt` field as the incremental column:
+Type: incremental sync using `updatedAt` cursor per collection.
 
 ```javascript
 // transformations/shopify/incremental-columns.js
@@ -59,93 +59,92 @@ All `shopify_backend` collections use the `updatedAt` field as the incremental c
 }
 ```
 
-On each sync run:
-1. Read MongoDB records where `updatedAt > lastSyncTime`
-2. Apply transformation
-3. Upsert to BigQuery (using `__boltic_primary_key_columns`)
-4. Update `lastSyncTime`
+Per run:
+1. Read rows where `updatedAt > lastSyncTime`
+2. Transform rows to destination schema
+3. Upsert into BigQuery using `__boltic_primary_key_columns`
+4. Advance sync cursor
 
 ---
 
-## Transformation Pipeline
+## Collection Coverage
 
-Each collection has two files:
+Synced now:
+- `stores`
+- `orders`
+- `subscriptions`
+- `productMappings`
+- `storeMappings`
+- `courierPartners`
 
-```
+Not synced yet:
+- `shipments`
+- `returns`
+- `logistics`
+- `logisticsOrders`
+- `logisticsDeliveryPartners`
+- `productAccounts`
+
+Details: [Collections Synced](./collections-synced.md)
+
+---
+
+## Transformation Contract
+
+Each collection path:
+
+```text
 transformations/shopify/mongo/shopify_backend/<collection>/
-├── transformation.js        # JavaScript transformation function
-└── destination-schemas.json # BigQuery table schema definition
+├── transformation.js
+└── destination-schemas.json
 ```
 
-### transformation.js Structure
-
-```javascript
-function runTransformation(row) {
-  // Map MongoDB fields to BigQuery columns
-  return {
-    store_id: row._id?.toString(),
-    shop: row.shop,
-    // ... more field mappings
-  }
-}
-
-function transFormRow(row) {
-  return { data: runTransformation(row) }
-}
-
-function transformRows(rows) {
-  const transformed = rows.map(row => transFormRow(row))
-  return JSON.stringify({
-    data: transformed,
-    __boltic_primary_key_columns: ['store_id'],
-    __boltic_partition_columns: ['created_on']
-  })
-}
-
-module.exports = { transformRows, transFormRow }
-```
-
-### destination-schemas.json Structure
-
-Defines the BigQuery table schema:
-
-```json
-{
-  "fields": [
-    { "name": "store_id", "type": "string", "isNullable": false, "description": "MongoDB ObjectId as string" },
-    { "name": "shop", "type": "string", "isNullable": false, "description": "Shopify store domain" },
-    { "name": "created_on", "type": "timestamp", "isNullable": true }
-  ]
-}
-```
+Expected `transformRows` output:
+- `data`: transformed row array
+- `__boltic_primary_key_columns`: upsert key(s)
+- `__boltic_partition_columns`: partition field(s)
 
 ---
 
-## Data Quality
+## Data Quality Guards
 
-### Safe Date Parsing
+- Safe date parsing with valid timestamp range checks
+- Safe JSON serialization for nested Mongo documents
+- Null fallback for malformed or out-of-range values
 
-Dates are validated to be within BigQuery's supported range:
-- Minimum: 1970-01-01
-- Maximum: 2262-04-11
+---
 
-Invalid dates are replaced with `null`.
+## DLQ Operations
 
-### Safe JSON Parsing
+Use DLQ for schema/transform failures.
 
-Nested MongoDB objects (like `address`, `courierPartners` array) are serialized to JSON strings using safe parsing that handles malformed data gracefully.
+```sql
+SELECT *
+FROM `fynd-jio-commerceml-prod.temp_zenith_data.dbe_dlq`
+WHERE dataset = 'shopify_backend'
+ORDER BY created_at DESC
+LIMIT 100
+```
+
+Recovery loop:
+1. Inspect failed payload + error
+2. Fix transformation/schema
+3. Reprocess DLQ from pipeline manager
 
 ---
 
 ## Environments
 
-| Environment | BigQuery Dataset | Notes |
-|-------------|----------------|-------|
-| Staging | Separate test dataset | `z0` environment uses different dataset |
-| Production | `fynd-jio-commerceml-prod.fynd_zenith_data` | Main analytics dataset |
+| Stage | Dataset/Project |
+|------|------------------|
+| Non-prod | Stage-specific test dataset |
+| Production | `fynd-jio-commerceml-prod.fynd_zenith_data` |
 
 ---
 
-## Pipeline Management
+## Ownership Boundaries
 
-The `cli_pipeline_manager.js` tool manages pipeline operations interactively. See [Pipeline Management](./pipeline-management.md) for usage.
+- Source schema ownership: `shopify-backend`
+- Transform/schema ownership: `transformations`
+- Runtime orchestration ownership: Boltic pipeline operators
+- Analytics consumption ownership: reporting/data consumers

@@ -34,10 +34,9 @@ Known issues, missing documentation, and technical debt items.
 
 | Doc | Missing Info |
 |-----|-------------|
-| Architecture → Data Flow | FDK extension webhook registration details |
 | Reference → API Backend | Full request/response schemas for each endpoint |
-| Operations → Environments | fyndz6–z9 exact hostnames |
-| How-To | Link existing account troubleshooting guide |
+| Reference → Webhooks | Exact FDK webhook topics/payload contracts by event type |
+| Operations → Environments | Runtime source-of-truth drift between Shopify app TOML and FIK overlays for Logistics environments |
 
 ---
 

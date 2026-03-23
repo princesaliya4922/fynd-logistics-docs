@@ -13,6 +13,28 @@ All webhooks registered and consumed by the Fynd Shopify Ecosystem.
 
 ---
 
+## Webhook Processing Sequence
+
+```mermaid
+sequenceDiagram
+    participant Sender as Shopify/FLP
+    participant API as shopify-backend
+    participant DB as MongoDB
+    participant Target as Shopify Admin API
+
+    Sender->>API: POST webhook
+    API->>API: Verify signature/auth
+    API->>DB: Load shop + existing state
+    API->>API: Route to topic handler
+    API->>DB: Upsert/update idempotently
+    opt fulfillment status update path
+        API->>Target: Update fulfillment/tracking
+    end
+    API-->>Sender: 200 OK
+```
+
+---
+
 ## Shopify → shopify-backend (Inbound)
 
 These webhooks are registered by `fyndIntegration.js` during app installation.
@@ -59,7 +81,16 @@ Registered in `shopify.app.toml` (not via code, configured declaratively):
 | `customers/redact` | `/webhook/store/gdpr/{shop}/customers/redact` | GDPR customer data deletion |
 | `shop/redact` | `/webhook/store/gdpr/{shop}/shop/redact` | GDPR shop data deletion |
 
-**Shopify API version for GDPR webhooks:** `2025-10` (from `shopify.app.toml`)
+### Shopify Webhook API Version Notes
+
+Webhook API version is read from each app TOML and may differ by app/environment config:
+
+| Config File | `api_version` |
+|-------------|---------------|
+| `shopify-pincode-checker/shopify.app.toml` | `2024-07` |
+| `shopify-pincode-checker/shopify.app.pincode-serviceability-test.toml` | `2024-10` |
+| `shopify-logistics-app/shopify.app.fynd-logistics-uat.toml` | `2026-01` |
+| `shopify-logistics-app/shopify.app.fynd-logistics.toml` | `2025-04` |
 
 ---
 
