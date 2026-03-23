@@ -192,3 +192,33 @@ flowchart TD
 2. HMAC/session validation is enforced before business logic.
 3. Write paths are MongoDB-first; analytics is eventual via pipeline sync.
 4. All webhook and cron handlers should be safe to replay.
+
+---
+
+## Flow 7: Fulfillment Cancellation and Shopify Re-Fulfillment Recovery
+
+```mermaid
+sequenceDiagram
+    participant Shopify as Shopify Webhooks
+    participant Backend as shopify-backend
+    participant Mongo as MongoDB
+    participant Fynd as FLP/OMS APIs
+
+    Shopify->>Backend: fulfillments/update (status=cancelled)
+    Backend->>Mongo: Resolve shipment + fulfillment_engine
+    Backend->>Fynd: Attempt cancellation
+    alt cancellation success
+        Backend->>Mongo: Mark shipment and shipmentItems cancelled
+    else recoverable failure (status 400 OR 422 FLP_CANCEL_AWB_NOT_FOUND)
+        Backend->>Mongo: Load original shipment + returned qty context
+        Backend->>Backend: Build adjusted line item quantities
+        Backend->>Shopify: Create replacement fulfillment (refulfillOnShopify)
+        alt re-fulfill success
+            Backend->>Mongo: Set refulfilled_shopify=true and update fulfillment ids
+        else re-fulfill failure
+            Backend->>Mongo: Persist structured REFULFILLMENT_FAILURE error_details
+        end
+    else non-recoverable failure
+        Backend->>Mongo: Keep cancellation failure details for manual ops action
+    end
+```

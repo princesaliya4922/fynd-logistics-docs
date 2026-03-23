@@ -27,6 +27,30 @@ When a customer places an order:
 
 ---
 
+## Flow Diagram: Fulfillment Creation
+
+```mermaid
+sequenceDiagram
+    participant Shopify as Shopify
+    participant Backend as shopify-backend
+    participant Mongo as MongoDB
+    participant FLP as FLP/OMS
+
+    Shopify->>Backend: orders/create webhook
+    Backend->>Backend: HMAC verify + eligibility checks
+    Backend->>Mongo: Create shipment (queued)
+    Backend->>FLP: Create shipment
+    alt create success
+        FLP-->>Backend: shipment_id + awb + dp details
+        Backend->>Mongo: status=processing
+    else create failure
+        FLP-->>Backend: error
+        Backend->>Mongo: status=error, retry_count++
+    end
+```
+
+---
+
 ## Manual Fulfillment (via Admin Extension)
 
 If an order wasn't fulfilled automatically (e.g., webhook was missed, or logistics was disabled):
@@ -35,6 +59,20 @@ If an order wasn't fulfilled automatically (e.g., webhook was missed, or logisti
 2. Find the **Fynd Fulfillment** block
 3. Click **Fulfill Order** button
 4. The backend will process the fulfillment immediately
+
+---
+
+## Flow Diagram: Manual/Bulk Fulfillment
+
+```mermaid
+flowchart TD
+    A[Merchant/Admin action] --> B{Trigger type}
+    B -- Single --> C[POST /logistics/fulfill/orders/:orderId]
+    B -- Bulk --> D[POST /logistics/fulfill/orders/bulk]
+    C --> E[Same fulfillment pipeline as webhook path]
+    D --> E
+    E --> F[Create/update shipments in Mongo]
+```
 
 ---
 
@@ -170,3 +208,60 @@ The limit resets at the start of each billing cycle (every 7 days per billing cr
 3. To retry a failed fulfillment:
    - Via Admin Extension: click "Retry" button
    - Via API: `POST /logistics/fulfill/orders/:orderId` (re-triggers fulfillment)
+
+---
+
+## Cancellation and Re-Fulfillment Recovery
+
+When Shopify sends `fulfillments/update` with `status=cancelled`, backend attempts to cancel the corresponding shipment on Fynd.
+
+### Flow Diagram: Cancellation Success Path
+
+```mermaid
+sequenceDiagram
+    participant Shopify as Shopify
+    participant Backend as shopify-backend
+    participant Fynd as FLP/OMS
+    participant Mongo as MongoDB
+
+    Shopify->>Backend: fulfillments/update (status=cancelled)
+    Backend->>Backend: Resolve local shipment + engine
+    alt engine = flp
+        Backend->>Fynd: cancelFlpShipment
+    else engine = oms
+        Backend->>Fynd: getShipmentIdsByOrderId + cancelFyndShipment
+    end
+    Fynd-->>Backend: cancel success
+    Backend->>Mongo: Mark shipment/items cancelled and adjust quantities
+```
+
+### Flow Diagram: Cancellation Failed -> Shopify Re-Fulfill
+
+```mermaid
+sequenceDiagram
+    participant Shopify as Shopify
+    participant Backend as shopify-backend
+    participant Fynd as FLP/OMS
+    participant Mongo as MongoDB
+
+    Shopify->>Backend: fulfillments/update (status=cancelled)
+    Backend->>Fynd: Cancel shipment
+    Fynd-->>Backend: failure (recoverable)
+    Note over Backend: Recoverable failures include\nstatus=400 or\nstatus=422 + FLP_CANCEL_AWB_NOT_FOUND
+    Backend->>Backend: Compute adjusted quantities\n(excluding already returned qty)
+    Backend->>Shopify: refulfillOnShopify(...)
+    alt re-fulfill success
+        Shopify-->>Backend: new fulfillment + fulfillment_order IDs
+        Backend->>Mongo: refulfilled_shopify=true\nupdate fulfillment IDs
+    else re-fulfill failure
+        Backend->>Mongo: error_details.type=REFULFILLMENT_FAILURE
+    end
+```
+
+### Recovery Notes
+
+- Re-fulfillment is attempted only for recoverable cancellation failures.
+- Quantities are adjusted before re-fulfillment to avoid over-fulfilling items already returned.
+- If all items are fully returned, re-fulfillment is skipped.
+- On successful re-fulfillment, shipment is marked `refulfilled_shopify=true`.
+- On re-fulfillment failure, structured `error_details` is stored for debugging.

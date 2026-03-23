@@ -94,14 +94,12 @@ Response:
 
 ## Return Status Flow
 
-```
-initiated
-    ↓ (Delivery partner picks up from customer)
-picked_up
-    ↓ (Arrives at warehouse)
-received
-    ↓ (Quality check + decision)
-completed / rejected
+```mermaid
+flowchart TD
+    A[initiated] --> B[picked_up]
+    B --> C[received]
+    C --> D[completed]
+    C --> E[rejected]
 ```
 
 ---
@@ -115,6 +113,29 @@ The `returns/cancel` Shopify webhook triggers automatically when a return is can
 The webhook is registered as a **GraphQL subscription webhook** (not REST):
 ```
 POST /webhook/store/{shop}/returns/cancel?app=fynd-logistics
+```
+
+### Return Cancellation Flow
+
+```mermaid
+sequenceDiagram
+    participant Shopify as Shopify
+    participant Backend as shopify-backend
+    participant Fynd as Fynd Return APIs
+    participant Mongo as MongoDB
+
+    Shopify->>Backend: returns/cancel webhook
+    Backend->>Mongo: Load return by shopify_return_id
+    alt fynd_return_shipment_id present
+        Backend->>Fynd: cancelReturnOnFynd
+        alt cancel success
+            Backend->>Mongo: mark return + returnItems as cancelled
+        else cancel failed
+            Backend->>Mongo: keep failure details for retry/manual ops
+        end
+    else shipment id missing
+        Backend->>Mongo: mark cancelled locally (idempotent fallback)
+    end
 ```
 
 ---
