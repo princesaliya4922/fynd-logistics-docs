@@ -38,7 +38,7 @@ sequenceDiagram
 ### Notes
 
 - Region gating is applied during bootstrap (`country_code === 'IN'`).
-- Webhooks are registered per app (`?app=promise` or `?app=logistics`).
+- Webhooks are registered per app (`?app=fynd-promise` or `?app=fynd-logistics`).
 
 ---
 

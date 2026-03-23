@@ -141,12 +141,18 @@ Nginx Ingress Controller (Kubernetes)
 
 ## Secrets Management
 
-All secrets (API keys, database passwords, tokens) are managed via:
+Target state for secrets management:
 1. **Kubernetes Secrets** — injected as environment variables at runtime
 2. **FIK Vault integration** — secrets fetched from HashiCorp Vault during deployment
 3. **ExternalSecrets** — synced from Vault to Kubernetes Secrets
 
-**Never commit secrets to git.** All `.env` files are in `.gitignore`.
+Current state note:
+- Some environment project YAMLs still contain inline secret-like values under `CommonEnvs`.
+- This should be treated as migration debt and moved to Vault/Kubernetes secret references.
+
+Policy:
+- Do not add new secrets to git-tracked files.
+- Keep `.env` files local-only and gitignored.
 
 ---
 

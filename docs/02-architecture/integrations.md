@@ -76,7 +76,7 @@ sidebar_position: 6
 
 FLP sends shipment status updates to:
 ```
-POST shopify-backend/webhook/flp
+POST shopify-backend/webhook/flp/shipment/update/{companyId}
 ```
 
 Events handled:

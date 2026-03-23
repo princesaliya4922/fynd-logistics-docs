@@ -53,13 +53,13 @@ Registered when `shopify-pincode-checker` is installed:
 
 | Topic | URL | Purpose |
 |-------|-----|---------|
-| `inventory_levels/update` | `/webhook/store/{shop}/inventory_levels/update?app=promise` | Sync inventory changes to Fynd |
-| `locations/create` | `/webhook/store/{shop}/locations/create?app=promise` | Create corresponding Fynd location |
-| `locations/update` | `/webhook/store/{shop}/locations/update?app=promise` | Update Fynd location |
-| `orders/create` | `/webhook/store/{shop}/orders/create?app=promise` | Track order for billing |
-| `app/uninstalled` | `/webhook/store/{shop}/app/uninstalled?app=promise` | Clean up store data |
-| `app_subscriptions/update` | `/webhook/store/{shop}/app_subscriptions/update?app=promise` | Handle subscription changes |
-| `products/update` | `/webhook/store/{shop}/products/update?app=promise` | Sync product to Fynd |
+| `inventory_levels/update` | `/webhook/store/{shop}/inventory_levels/update?app=fynd-promise` | Sync inventory changes to Fynd |
+| `locations/create` | `/webhook/store/{shop}/locations/create?app=fynd-promise` | Create corresponding Fynd location |
+| `locations/update` | `/webhook/store/{shop}/locations/update?app=fynd-promise` | Update Fynd location |
+| `orders/create` | `/webhook/store/{shop}/orders/create?app=fynd-promise` | Track order for billing |
+| `app/uninstalled` | `/webhook/store/{shop}/app/uninstalled?app=fynd-promise` | Clean up store data |
+| `app_subscriptions/update` | `/webhook/store/{shop}/app_subscriptions/update?app=fynd-promise` | Handle subscription changes |
+| `products/update` | `/webhook/store/{shop}/products/update?app=fynd-promise` | Sync product to Fynd |
 
 ### Logistics App Webhooks
 
@@ -67,9 +67,9 @@ Registered when `shopify-logistics-app` is installed — includes all Promise we
 
 | Topic | URL | Purpose |
 |-------|-----|---------|
-| `fulfillments/create` | `/webhook/store/{shop}/fulfillments/create?app=logistics` | Track new fulfillments |
-| `fulfillments/update` | `/webhook/store/{shop}/fulfillments/update?app=logistics` | Track fulfillment status changes |
-| `returns/cancel` *(GraphQL)* | `/webhook/store/{shop}/returns/cancel?app=logistics` | Handle return cancellations |
+| `fulfillments/create` | `/webhook/store/{shop}/fulfillments/create?app=fynd-logistics` | Track new fulfillments |
+| `fulfillments/update` | `/webhook/store/{shop}/fulfillments/update?app=fynd-logistics` | Track fulfillment status changes |
+| `returns/cancel` *(GraphQL)* | `/webhook/store/{shop}/returns/cancel?app=fynd-logistics` | Handle return cancellations |
 
 ### GDPR Webhooks
 
@@ -115,8 +115,8 @@ if (!timingSafeEqual(Buffer.from(hmac), Buffer.from(receivedHmac))) {
 ```
 
 **App-specific secret selection:**
-- `?app=logistics` → `config.get('shopify_app.logistics_api_secret')`
-- `?app=promise` → `config.get('shopify_app.promise_api_secret')`
+- `?app=fynd-logistics` → `config.get('shopify_app.logistics_api_secret')`
+- `?app=fynd-promise` (or missing legacy value) → `config.get('shopify_app.promise_api_secret')`
 
 ---
 
@@ -125,14 +125,15 @@ if (!timingSafeEqual(Buffer.from(hmac), Buffer.from(receivedHmac))) {
 FLP fires shipment status updates to:
 
 ```
-POST https://shopify-backend.extensions.fynd.com/webhook/flp
+POST https://shopify-backend.extensions.fynd.com/webhook/flp/shipment/update/{companyId}
 ```
 
 ### Event Types Handled
 
 | Event Name | Description |
 |-----------|-------------|
-| `application/shipment/update/v1` | Shipment status changed |
+| `application/shipment/update/v1` | OMS payload shipment status changed |
+| Native FLP status payloads | Direct FLP carrier status webhooks |
 
 ### Payload Structure
 

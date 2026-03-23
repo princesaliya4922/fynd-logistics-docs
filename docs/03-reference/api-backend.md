@@ -42,7 +42,7 @@ POST /webhook/store/:shop/:topic
 POST /webhook/store/:shop/:topic/:subtopic
 ```
 
-**Auth:** HMAC (`?app=logistics` or `?app=promise`)
+**Auth:** HMAC (`?app=fynd-logistics` or `?app=fynd-promise`)
 
 **Path params:**
 - `:shop` — Shopify store domain (e.g., `my-store.myshopify.com`)
@@ -85,12 +85,15 @@ POST /webhook/extension/status
 ### FLP Platform Webhook
 
 ```
-POST /webhook/flp
+POST /webhook/flp/shipment/update/:companyId
 ```
 
 **Auth:** None (payload contains its own authentication)
 
-**Purpose:** Receives shipment status updates from FLP Platform.
+**Purpose:** Receives shipment status updates from FLP Platform (OMS and native FLP payload formats).
+
+**Path params:**
+- `:companyId` — Fynd company ID used to resolve eligible stores for shipment status updates.
 
 **Body:**
 ```json

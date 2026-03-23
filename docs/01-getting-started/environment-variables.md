@@ -24,27 +24,29 @@ Complete reference for all environment variables across all three projects.
 | `MONGO_SHOPIFY_BACKEND_READ_ONLY` | Yes | — | Read-only MongoDB replica connection string. Can be same as read/write locally. |
 | `REDIS_SHOPIFY_BACKEND_READ_WRITE` | Yes | — | Primary Redis connection string (read + write). |
 | `REDIS_SHOPIFY_BACKEND_READ_ONLY` | Yes | — | Read-only Redis connection string. |
-| `SHOPIFY_APP__LOGISTICS_API_KEY` | Yes | — | Shopify API key for the Fynd Logistics app. Used to verify session tokens. |
-| `SHOPIFY_APP__LOGISTICS_API_SECRET` | Yes | — | Shopify API secret for the Fynd Logistics app. Used to sign/verify JWTs. |
-| `SHOPIFY_APP__PROMISE_API_KEY` | Yes | — | Shopify API key for the Fynd Promise app. |
-| `SHOPIFY_APP__PROMISE_API_SECRET` | Yes | — | Shopify API secret for the Fynd Promise app. |
+| `LOGISTICS_SHOPIFY_API_KEY` | Yes | — | Shopify API key for the Fynd Logistics app. Used to verify session tokens. |
+| `LOGISTICS_SHOPIFY_API_SECRET_KEY` | Yes | — | Shopify API secret for the Fynd Logistics app. Used for JWT/HMAC verification. |
+| `PROMISE_SHOPIFY_API_KEY` | Yes | — | Shopify API key for the Fynd Promise app. |
+| `PROMISE_SHOPIFY_API_SECRET_KEY` | Yes | — | Shopify API secret for the Fynd Promise app. |
 | `EXTENSION_BASE_URL` | Yes | — | Base URL of the Fynd platform extension services. |
 | `EXTENSION_API_KEY` | Yes | — | API key for authenticating with Fynd extension services. |
 | `EXTENSION_API_SECRET` | Yes | — | API secret for Fynd extension services. |
-| `LOGISTICS_API_BASE_URL` | Yes | — | Fynd Central API base URL (company registration, subscriptions). |
+| `LOGISTICS_API_BASE_URL_CENTRAL_SIT` | Yes | — | Fynd Central integration base URL for user/org/account flows. |
+| `LOGISTICS_API_BASE_URL_UAT` | Yes | — | Fynd UAT API base URL for auth/extension install/billing flows. |
+| `LOGISTICS_API_BASE_URL_CONSOLE_UAT` | Yes | — | Fynd Console UAT base URL for product account lookups. |
 | `FLP_PLATFORM_API_BASE_URL` | Yes | — | FLP Platform API base URL (shipment creation). |
 | `LOGISTICS_EXTENSION_API_BASE_URL` | Yes | — | Fynd Logistics Extension API base URL (delivery partners). |
 | `LOGISTICS_EXTENSION_API_PATH` | No | — | Path prefix for logistics extension API. |
 | `LOGISTICS_EXTENSION_AUTH_TOKEN` | Yes | — | Auth token for logistics extension API. |
 | `FYND_DP_EXTENSION_ID` | Yes | — | Fynd delivery partner extension ID. |
-| `FYND_PLATFORM_DOMAIN` | Yes | — | Fynd platform domain (e.g., `api.fynd.com`). |
+| `FYND_PLATFORM_DOMAIN` | Yes | — | Fynd platform domain suffix (e.g., `fynd.com`). |
 | `COMPANY_ID` | Yes | — | Default Fynd company ID used for shared operations. |
 | `API_KEY` | Yes | — | General Fynd platform API key. |
 | `APPLICATION_ID` | Yes | — | Fynd application ID. |
 | `APPLICATION_TOKEN` | Yes | — | Fynd application token. |
 | `BOLTIC_USERNAME` | Yes | — | Username for basic auth on internal/admin API endpoints. |
 | `BOLTIC_PASSWORD` | Yes | — | Password for basic auth on internal/admin API endpoints. |
-| `ADMIN_PANEL_PASSWORD` | Yes | — | Password for the built-in admin dashboard (`/logistics/admin`). |
+| `ADMIN_PANEL_PASSWORD` | Yes | — | Password for admin dashboard UI unlock (`/logistics/admin`). |
 | `GOOGLE_MAPS_API_KEY` | No | — | Google Maps API key for distance/location calculations. |
 | `SENTRY_DSN` | No | — | Sentry DSN for error tracking. Leave blank to disable. |
 | `SENTRY_ENVIRONMENT` | No | `development` | Sentry environment tag. |
@@ -102,4 +104,4 @@ Complete reference for all environment variables across all three projects.
 - **Never commit `.env` files.** They are in `.gitignore` in all repos.
 - In production, all secrets are injected via Kubernetes Secrets managed by FIK (Fynd Infrastructure Kit).
 - The `convict` library validates all env vars on startup. If a required var is missing, the server will fail to start with a descriptive error.
-- The `SHOPIFY_APP__*` variables use double underscores (`__`) because Convict maps nested config keys using `_` separators. The actual key in `config.js` is `shopify_app.logistics_api_key`.
+- Shopify app secrets are read from direct env vars (`LOGISTICS_SHOPIFY_API_*`, `PROMISE_SHOPIFY_API_*`) in `shopify-backend/config.js`.

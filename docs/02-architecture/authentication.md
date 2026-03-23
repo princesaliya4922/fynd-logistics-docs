@@ -115,8 +115,8 @@ sequenceDiagram
 
 ### App Secret Selection
 
-- `?app=promise` -> `shopify_app.promise_api_secret`
-- `?app=logistics` -> `shopify_app.logistics_api_secret`
+- `?app=fynd-promise` -> `shopify_app.promise_api_secret`
+- `?app=fynd-logistics` -> `shopify_app.logistics_api_secret`
 
 `crypto.timingSafeEqual` is used to avoid timing attacks.
 

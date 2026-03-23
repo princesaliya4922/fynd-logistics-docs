@@ -46,7 +46,7 @@ If you see `401 Unauthorized` during install, your token is missing or expired. 
 
 ## 3. Configure Environment Variables
 
-Copy the example env file and fill in the values:
+Copy the example env file and fill in values:
 
 ```bash
 cp .env.example .env
@@ -68,10 +68,10 @@ REDIS_SHOPIFY_BACKEND_READ_WRITE=redis://localhost:6379/0
 REDIS_SHOPIFY_BACKEND_READ_ONLY=redis://localhost:6379/0
 
 # Shopify App Credentials
-SHOPIFY_APP__LOGISTICS_API_KEY=<from Shopify Partners>
-SHOPIFY_APP__LOGISTICS_API_SECRET=<from Shopify Partners>
-SHOPIFY_APP__PROMISE_API_KEY=<from Shopify Partners>
-SHOPIFY_APP__PROMISE_API_SECRET=<from Shopify Partners>
+LOGISTICS_SHOPIFY_API_KEY=<from Shopify Partners>
+LOGISTICS_SHOPIFY_API_SECRET_KEY=<from Shopify Partners>
+PROMISE_SHOPIFY_API_KEY=<from Shopify Partners>
+PROMISE_SHOPIFY_API_SECRET_KEY=<from Shopify Partners>
 
 # Fynd Platform
 EXTENSION_BASE_URL=<fynd backend base URL>

@@ -82,7 +82,7 @@ graph LR
 
 | Layer | Technology |
 |-------|-----------|
-| Runtime | Node.js 22 |
+| Runtime | Node.js >=18 (Node 20 LTS recommended) |
 | Framework | Express.js (via `fit` — Fynd's internal framework) |
 | Database | MongoDB 6 with Mongoose ODM |
 | Cache / Session | Redis 7 |
@@ -101,7 +101,7 @@ graph LR
 
 | Layer | Technology |
 |-------|-----------|
-| Runtime | Node.js 22 |
+| Runtime | Node.js >=16.13 (Node 20 LTS recommended) |
 | Framework | Express.js |
 | Session Storage | SQLite (via `@shopify/shopify-app-session-storage-sqlite`) |
 | Shopify Integration | `@shopify/shopify-app-express` |
@@ -178,7 +178,7 @@ For full deployment details → [Infrastructure](../05-operations/infrastructure
 4. Business logic updates MongoDB, may call Fynd APIs
 
 ### On Fynd Platform Webhook
-1. FLP fires POST to `shopify-backend/webhook/flp`
+1. FLP fires POST to `shopify-backend/webhook/flp/shipment/update/:companyId`
 2. `webhook.controller.js` routes to `shipmentService`
 3. Shopify fulfillment status updated via Admin API
 4. MongoDB shipment record updated

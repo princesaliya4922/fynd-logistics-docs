@@ -118,7 +118,7 @@ Routes are registered in `index.js` in this order:
 6. /config/*                             — Configuration routes
 7. /logistics/otp/*                      — OTP routes (no session auth)
 8. /logistics/*                          — Main logistics routes (session auth)
-9. /webhook/flp                          — FLP platform webhooks
+9. /webhook/flp/shipment/update/:companyId — FLP platform webhooks
 10. /webhook/*                           — Shopify webhooks (HMAC auth)
 ```
 

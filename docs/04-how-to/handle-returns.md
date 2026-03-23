@@ -114,7 +114,7 @@ The `returns/cancel` Shopify webhook triggers automatically when a return is can
 
 The webhook is registered as a **GraphQL subscription webhook** (not REST):
 ```
-POST /webhook/store/{shop}/returns/cancel?app=logistics
+POST /webhook/store/{shop}/returns/cancel?app=fynd-logistics
 ```
 
 ---

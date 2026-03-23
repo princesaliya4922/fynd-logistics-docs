@@ -16,112 +16,75 @@ This page maps the full Fynd Shopify system: runtime components, deployment cont
 ## Whole System Diagram
 
 ```mermaid
-graph TB
-    subgraph Clients[Clients]
-        Merchant[Merchant in Shopify Admin]
-        Customer[Customer on Storefront]
-    end
+flowchart LR
+    Merchant[Merchant]
+    Customer[Customer]
 
     subgraph Shopify[Shopify Platform]
-        ShopifyAdmin[Shopify Admin + App Bridge]
-        ShopifyAPI[Admin API]
-        ShopifyBilling[Billing API]
-        ShopifyWebhooks[Webhook Delivery]
+        Admin[Admin UI + App Bridge]
+        AdminAPI[Admin API]
+        BillingAPI[Billing API]
+        Webhooks[Webhook Delivery]
     end
 
     subgraph Apps[Fynd Shopify Apps]
-        PromiseApp[shopify-pincode-checker]
-        LogisticsApp[shopify-logistics-app]
-        Backend[shopify-backend API]
+        Promise[shopify-pincode-checker]
+        Logistics[shopify-logistics-app]
+        Backend[shopify-backend]
     end
 
-    subgraph Extensions[Shopify Extensions]
-        CheckoutExt[fynd-promise-checkout]
-        PDPExt[fynd-promise-pdp]
-        FulfillExt[fullfillment-extension]
-        ReturnsExt[fynd-returns]
+    subgraph Ext[Shopify Extensions]
+        Checkout[fynd-promise-checkout]
+        PDP[fynd-promise-pdp]
+        OrderBlock[fullfillment-extension]
     end
 
-    subgraph Data[State + Storage]
-        Mongo[(MongoDB\nshopify_backend)]
+    subgraph Data[Data Stores]
+        SQLite[(SQLite)]
         Redis[(Redis)]
-        SQLite[(SQLite\nPromise session store)]
+        Mongo[(MongoDB)]
     end
 
-    subgraph FyndPlatform[Fynd Platform APIs]
-        CentralAPI[Fynd Central API]
+    subgraph Fynd[Fynd Platform]
+        Central[Central APIs]
         FLP[FLP Platform]
-        Serviceability[Serviceability API]
-        LogisticsExtAPIs[Courier Extension APIs]
-        FDKEvents[Fynd/FLP outbound webhooks]
+        Serviceability[Serviceability APIs]
+        FyndHooks[Fynd/FLP Webhooks]
     end
 
-    subgraph Pipeline[Analytics Pipeline]
-        Transform[Zenith transformation scripts]
-        BQ[(BigQuery\nfynd_zenith_data)]
-        DLQ[(BigQuery DLQ)]
+    subgraph Analytics[Analytics Pipeline]
+        Transform[transformations]
+        BQ[(BigQuery)]
+        DLQ[(BQ DLQ)]
     end
 
-    subgraph Ops[Delivery + Operations]
-        Repos[Repos:\nshopify-backend / promise / logistics / fik / transformations]
-        CI[Azure Pipelines]
-        FIK[FIK deploy configs]
-        K8s[Kubernetes ext cluster]
-        Sentry[Sentry]
-        NewRelic[New Relic]
-        Grafana[Grafana/Prometheus]
-        PagerDuty[PagerDuty]
-    end
+    Merchant --> Admin
+    Admin --> Promise
+    Admin --> Logistics
+    Customer --> Checkout
+    Customer --> PDP
+    Merchant --> OrderBlock
 
-    Merchant --> ShopifyAdmin
-    Customer --> CheckoutExt
-    Customer --> PDPExt
-    Merchant --> FulfillExt
-    Merchant --> ReturnsExt
+    Promise --> Backend
+    Logistics --> Backend
+    Checkout --> Backend
+    PDP --> Backend
+    OrderBlock --> Backend
 
-    ShopifyAdmin --> PromiseApp
-    ShopifyAdmin --> LogisticsApp
-
-    PromiseApp --> Backend
-    LogisticsApp --> Backend
-    CheckoutExt --> Backend
-    PDPExt --> Backend
-    FulfillExt --> Backend
-    ReturnsExt --> Backend
-
-    Backend --> ShopifyAPI
-    Backend --> ShopifyBilling
-    ShopifyWebhooks --> Backend
-
-    PromiseApp --- SQLite
-    LogisticsApp --- Redis
-    Backend --- Mongo
-    Backend --- Redis
-
-    Backend --> CentralAPI
+    Webhooks --> Backend
+    Backend --> AdminAPI
+    Backend --> BillingAPI
+    Backend --> Central
     Backend --> FLP
     Backend --> Serviceability
-    Backend --> LogisticsExtAPIs
-    FDKEvents --> Backend
+    FyndHooks --> Backend
 
-    Mongo --> Transform
-    Transform --> BQ
+    Promise --- SQLite
+    Logistics --- Redis
+    Backend --- Redis
+    Backend --- Mongo
+    Mongo --> Transform --> BQ
     Transform --> DLQ
-
-    Repos --> CI
-    CI --> FIK
-    FIK --> K8s
-    K8s --> PromiseApp
-    K8s --> LogisticsApp
-    K8s --> Backend
-
-    Backend --> Sentry
-    PromiseApp --> Sentry
-    LogisticsApp --> Sentry
-    Backend --> NewRelic
-    Backend --> Grafana
-    Sentry --> PagerDuty
-    Grafana --> PagerDuty
 ```
 
 ---
@@ -258,4 +221,36 @@ sequenceDiagram
     FLP->>B: Shipment status webhook
     B->>M: Update shipment state
     B->>Shopify: Update fulfillment tracking/status
+```
+
+### Flow C: Auth and Trust Boundaries
+
+```mermaid
+sequenceDiagram
+    participant Browser as Shopify Embedded Frontend
+    participant App as Promise/Logistics Node App
+    participant Backend as shopify-backend
+    participant Shopify as Shopify Platform
+
+    Browser->>App: /api/* with session token (JWT)
+    App->>App: validateAuthenticatedSession
+    App->>Backend: Forward request + x-api-key
+    Backend->>Backend: Verify session JWT + route auth
+    Shopify->>Backend: webhook + X-Shopify-Hmac-Sha256
+    Backend->>Backend: Verify HMAC via app-specific secret
+```
+
+### Flow D: Retry and Idempotency
+
+```mermaid
+flowchart TD
+    A[Shopify/FLP webhook delivered] --> B[Process event in backend]
+    B --> C{Already processed?}
+    C -- Yes --> D[Return 200 and skip]
+    C -- No --> E[Apply business logic]
+    E --> F{Success?}
+    F -- Yes --> G[Persist state transition]
+    F -- No --> H[Return non-2xx]
+    H --> I[Provider retries delivery]
+    I --> A
 ```
