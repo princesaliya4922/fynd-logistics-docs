@@ -1,0 +1,12 @@
+{
+  "name": "fynd-docs",
+  "version": "1.0.0",
+  "description": "Documentation site for the Fynd Shopify ecosystem (Fynd Promise + Fynd Logistics)",
+  "private": true,
+  "scripts": {
+    "predocs:dev": "npm --prefix website run clear",
+    "docs:dev": "NODE_ENV=development npm --prefix website run start",
+    "docs:build": "npm --prefix website run build",
+    "docs:serve": "npm --prefix website run serve"
+  }
+}
