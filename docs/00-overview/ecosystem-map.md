@@ -30,7 +30,7 @@ flowchart LR
     subgraph Apps[Fynd Shopify Apps]
         Promise[shopify-pincode-checker]
         Logistics[shopify-logistics-app]
-        Backend[shopify-backend]
+        Backend[logistics-backend]
     end
 
     subgraph Ext[Shopify Extensions]
@@ -190,7 +190,7 @@ graph LR
 sequenceDiagram
     participant C as Customer
     participant Ext as Checkout/PDP Extension
-    participant B as shopify-backend
+    participant B as backend
     participant M as MongoDB
     participant S as Serviceability API
 
@@ -208,7 +208,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Shopify as Shopify Webhooks
-    participant B as shopify-backend
+    participant B as backend
     participant M as MongoDB
     participant FLP as FLP Platform
 
@@ -229,7 +229,7 @@ sequenceDiagram
 sequenceDiagram
     participant Browser as Shopify Embedded Frontend
     participant App as Promise/Logistics Node App
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Shopify as Shopify Platform
 
     Browser->>App: /api/* with session token (JWT)

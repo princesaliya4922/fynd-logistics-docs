@@ -32,7 +32,7 @@ When a customer places an order:
 ```mermaid
 sequenceDiagram
     participant Shopify as Shopify
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Mongo as MongoDB
     participant FLP as FLP/OMS
 
@@ -220,7 +220,7 @@ When Shopify sends `fulfillments/update` with `status=cancelled`, backend attemp
 ```mermaid
 sequenceDiagram
     participant Shopify as Shopify
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Fynd as FLP/OMS
     participant Mongo as MongoDB
 
@@ -240,7 +240,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Shopify as Shopify
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Fynd as FLP/OMS
     participant Mongo as MongoDB
 

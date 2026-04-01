@@ -27,7 +27,7 @@ graph LR
     subgraph Apps["Fynd Shopify Apps"]
         PromiseFE["Fynd Promise Frontend<br/>shopify-pincode-checker<br/>React 18 + Vite + Polaris"]
         LogisticsFE["Fynd Logistics Frontend<br/>shopify-logistics-app<br/>React 18 + Vite + Polaris"]
-        Backend["Shared Backend<br/>shopify-backend<br/>Node.js + Express"]
+        Backend["Shared Backend<br/>backend<br/>Node.js + Express"]
     end
 
     subgraph Extensions["Shopify Extensions"]

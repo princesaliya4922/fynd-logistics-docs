@@ -20,7 +20,7 @@ sequenceDiagram
     participant Merchant
     participant Shopify
     participant App as Promise/Logistics App Server
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Mongo as MongoDB
 
     Merchant->>Shopify: Install app
@@ -48,7 +48,7 @@ sequenceDiagram
 sequenceDiagram
     participant Merchant
     participant PromiseFE as Promise Frontend
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Mongo as MongoDB
     participant Shopify as Shopify Admin API
 
@@ -84,7 +84,7 @@ sequenceDiagram
 sequenceDiagram
     participant Customer
     participant Ext as Theme/Checkout Extension
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Mongo as MongoDB
     participant Serviceability as Fynd Serviceability API
 
@@ -110,7 +110,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Shopify as Shopify Webhooks
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Mongo as MongoDB
     participant FLP as FLP Platform
 
@@ -200,7 +200,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant Shopify as Shopify Webhooks
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Mongo as MongoDB
     participant Fynd as FLP/OMS APIs
 

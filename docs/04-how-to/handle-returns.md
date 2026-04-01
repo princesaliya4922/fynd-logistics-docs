@@ -120,7 +120,7 @@ POST /webhook/store/{shop}/returns/cancel?app=fynd-logistics
 ```mermaid
 sequenceDiagram
     participant Shopify as Shopify
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Fynd as Fynd Return APIs
     participant Mongo as MongoDB
 

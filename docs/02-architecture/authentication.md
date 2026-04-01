@@ -25,7 +25,7 @@ sequenceDiagram
     participant Shopify
     participant App as Promise/Logistics App Server
     participant SessionStore as SQLite or Redis
-    participant Backend as shopify-backend
+    participant Backend as backend
 
     Merchant->>Shopify: Click "Install app"
     Shopify->>App: GET /api/auth?shop=... 
@@ -57,7 +57,7 @@ Used for React frontend/API-extension calls to backend-proxied APIs.
 sequenceDiagram
     participant FE as React App / Extension
     participant AB as Shopify App Bridge
-    participant B as shopify-backend
+    participant B as backend
     participant DB as MongoDB
 
     FE->>AB: getSessionToken()
@@ -99,7 +99,7 @@ Used for incoming Shopify webhooks.
 ```mermaid
 sequenceDiagram
     participant Shopify
-    participant B as shopify-backend
+    participant B as backend
 
     Shopify->>B: POST /webhook/store/:shop/:topic?app=...
     Note over Shopify,B: Includes X-Shopify-Hmac-Sha256
@@ -150,7 +150,7 @@ Used when linking a Shopify merchant to an existing Fynd company.
 sequenceDiagram
     participant Merchant
     participant LogisticsApp
-    participant Backend as shopify-backend
+    participant Backend as backend
     participant Central as Fynd Central API
 
     Merchant->>LogisticsApp: Enter email and request OTP

@@ -18,7 +18,7 @@ All webhooks registered and consumed by the Fynd Shopify Ecosystem.
 ```mermaid
 sequenceDiagram
     participant Sender as Shopify/FLP
-    participant API as shopify-backend
+    participant API as backend
     participant DB as MongoDB
     participant Target as Shopify Admin API
 
