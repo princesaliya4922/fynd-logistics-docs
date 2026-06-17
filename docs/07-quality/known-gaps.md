@@ -17,17 +17,17 @@ Known issues, missing documentation, and technical debt items.
 
 | Area | Current State | Impact |
 |------|--------------|--------|
-| `shopify-backend` services (logisticsService, fulfilmentService, etc.) | No tests | High — core business logic untested |
-| `shopifyWebhookService.js` | No tests | High — webhook processing not tested |
-| Frontend React components (all 3 apps) | No tests | Medium — UI regressions not caught |
-| Billing cron (`cron/index.js`) | No tests | High — billing correctness not verified |
-| Admin OTP auth and CSRF middleware | No focused tests documented | High — protects internal logistics admin APIs |
-| `spec/testFiles/registration.test.js` | Placeholder only | Low — just a template |
+| `shopify-backend` service coverage | Broad Jest suite exists, but large service files still have uncovered branches and integration boundaries | Medium — regressions can still hide in edge paths |
+| `shopifyWebhookService.js` | Covered by webhook controller/service tests, but exact third-party payload contracts are not fully documented as fixtures | Medium — provider payload drift can still break processing |
+| Frontend React components | Limited root Jest coverage; most React component/UI states are not covered with component tests | Medium — UI regressions not caught early |
+| Billing cron (`cron/index.js`) | Route wiring/date helpers have tests, but the full cron execution path and Shopify usage-record side effects need focused tests | High — billing correctness is financially sensitive |
+| Embedded app registration tests | `shopify-pincode-checker/spec/testFiles/registration.test.js` and `shopify-logistics-app/spec/testFiles/registration.test.js` are still placeholder-style tests | Low — backend registration has real tests; app-local registration templates add little value |
 
 **Recommendation:** Start with integration tests for the most critical paths:
 1. Order creation → fulfillment webhook
 2. Pincode serviceability check
 3. Billing cron execution
+4. Frontend setup flows and extension UI states
 
 ---
 

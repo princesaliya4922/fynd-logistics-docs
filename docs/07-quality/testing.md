@@ -77,16 +77,20 @@ Coverage is collected primarily for route files, then backend coverage tooling r
 
 ### shopify-backend
 
-| File | Status | Coverage |
-|------|--------|---------|
-| `spec/testFiles/shopifySessionAuth.test.js` | Active | Tests JWT session auth middleware |
-| `spec/testFiles/registration.test.js` | Placeholder | Template only — no real tests |
+The backend currently has a broad Jest suite under `spec/testFiles/` (108 test files in the audited checkout). Active areas include:
+
+| Area | Example Files |
+|------|---------------|
+| Auth and security middleware | `shopifySessionAuth.test.js`, `shopifyHmacAuth.test.js`, `adminAuth.middleware.test.js`, `adminAuthService.test.js`, `basicAuth.test.js` |
+| Registration and app uninstall | `registration.test.js`, `registrationAuth.test.js`, `appUninstallService.test.js` |
+| Fulfillment and returns | `fulfilmentService.*.test.js`, `returnService.*.test.js`, `returnEligibility.controller.*.test.js` |
+| Webhooks | `webhook.controller.*.test.js`, `shopifyWebhookService.*.test.js`, `flpWebhook.route.test.js` |
+| Serviceability and logistics setup | `serviceability.*.test.js`, `logisticsService.*.test.js`, `locationsService.*.test.js` |
+| Routing and config | `routes.wiring.test.js`, `routes.coverage.test.js`, `logistics.config.operationsSupportEmail.test.js` |
 
 ### shopify-pincode-checker / shopify-logistics-app
 
-| File | Status | Coverage |
-|------|--------|---------|
-| `spec/testFiles/registration.test.js` | Placeholder | Template only |
+Both embedded apps have small root-level Jest suites for billing, `fyndIntegration`, logging, Sentry setup, and placeholder registration tests. Logistics additionally has tests for navigation and OTP flow error parsing. These are not comprehensive React component tests.
 
 ---
 
@@ -117,16 +121,13 @@ test('returns 401 for invalid session token', async () => {
 
 ---
 
-## Known Gap: Minimal Test Coverage
+## Known Gap: Remaining Test Coverage
 
 See [Quality → Known Gaps](./known-gaps.md) for the full picture.
 
-- `fulfilmentService.js` / fulfillment processors
-- `shopifyWebhookService.js`
-- `logisticsService.js`
-- Billing cron and Shopify usage-record behavior
-- Admin OTP auth / CSRF / origin middleware
-- All frontend React components
+- Large backend services still need branch/contract coverage in high-risk areas.
+- Billing cron and Shopify usage-record behavior need focused end-to-end tests.
+- Frontend React components and setup flows need component-level coverage.
 
 ---
 
