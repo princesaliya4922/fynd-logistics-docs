@@ -7,20 +7,20 @@ sidebar_position: 2
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-`shopify-backend` is the shared Node.js/Express server that powers both Fynd Promise and Fynd Logistics. Run it first before starting either frontend app.
+`shopify-backend` is the shared Node.js/FIT-Express server that powers both Fynd Promise and Fynd Logistics. Run it first before starting either embedded app.
 
 ---
 
-## 1. Clone the Repository
+## 1. Open the Monorepo Service
 
 ```bash
-git clone <repo-url>/shopify-backend.git
-cd shopify-backend
+git clone <repo-url>/shopify-apps.git
+cd shopify-apps/services/shopify-backend
 ```
 
-> **Note:** The repo is hosted on Azure DevOps. Get the clone URL from your team lead.
+> **Note:** The old standalone `shopify-backend` repository is no longer the primary working tree for current service code.
 
 ---
 
@@ -69,19 +69,21 @@ REDIS_SHOPIFY_BACKEND_READ_ONLY=redis://localhost:6379/0
 
 # Shopify App Credentials
 LOGISTICS_SHOPIFY_API_KEY=<from Shopify Partners>
-LOGISTICS_SHOPIFY_API_SECRET_KEY=<from Shopify Partners>
+SHOPIFY_LOGISTICS_LOGISTICS_SHOPIFY_API_SECRET_KEY=<from Shopify Partners>
 PROMISE_SHOPIFY_API_KEY=<from Shopify Partners>
-PROMISE_SHOPIFY_API_SECRET_KEY=<from Shopify Partners>
+SHOPIFY_LOGISTICS_PROMISE_SHOPIFY_API_SECRET_KEY=<from Shopify Partners>
+PROMISE_SHOPIFY_HMAC_ENABLED=false
 
 # Fynd Platform
 EXTENSION_BASE_URL=<fynd backend base URL>
 EXTENSION_API_KEY=<fynd extension API key>
 EXTENSION_API_SECRET=<fynd extension API secret>
 
-# Admin Panel
+# Internal Basic Auth and Admin OTP Auth
 BOLTIC_USERNAME=admin
 BOLTIC_PASSWORD=<choose a local password>
-ADMIN_PANEL_PASSWORD=<choose a local password>
+ADMIN_ALLOWED_EMAILS=<your-email@example.com>
+ADMIN_AUTH_STRICT=false
 
 # Optional (leave blank locally)
 SENTRY_DSN=
@@ -130,7 +132,7 @@ ngrok http 8000
 Copy the HTTPS URL (e.g. `https://abc123.ngrok-free.app`) and set it as `HOST` in your `.env`:
 
 ```bash
-HOST=https://abc123.ngrok-free.app
+BACKEND_DOMAIN=https://abc123.ngrok-free.app
 ```
 
 Restart the server after changing `HOST`.
@@ -140,15 +142,14 @@ Restart the server after changing `HOST`.
 ## 7. Verify the Server Is Running
 
 ```bash
-curl http://localhost:8000/_healthz
-# Expected: 200 OK
+curl -i http://localhost:8000/
+# Expected: 200 OK HTML
 
-curl http://localhost:8000/_readyz
-# Expected: 200 OK
-
-curl http://localhost:8000/api-docs
+curl -I http://localhost:8000/api-docs
 # Expected: Swagger UI HTML
 ```
+
+`/_healthz` and `/_readyz` are not implemented in the current backend and return 404.
 
 ---
 
@@ -168,10 +169,11 @@ curl http://localhost:8000/api-docs
 ## Running via Docker
 
 ```bash
-docker compose up --build
+docker build -t shopify-backend .
+docker run --env-file .env -p 8000:8000 shopify-backend
 ```
 
-The `docker-compose.yml` builds the app and starts it on port `8081`. Set environment variables in `docker-compose.yml` or via an `.env` file.
+There is no backend-specific `docker-compose.yml` in the current monorepo snapshot.
 
 ---
 

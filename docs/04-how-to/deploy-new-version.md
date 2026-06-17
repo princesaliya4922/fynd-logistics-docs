@@ -7,189 +7,138 @@ sidebar_position: 4
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-How to build and deploy any of the three services.
-
----
-
-## shopify-backend
-
-### Build Docker Image
-
-```bash
-cd shopify-backend
-
-# Build the image (requires AZURE_PRIVATE_TOKEN_BASE64 for private npm packages)
-docker build \
-  --build-arg AZURE_PRIVATE_TOKEN_BASE64=$AZURE_PRIVATE_TOKEN_BASE64 \
-  -t shopify-backend:latest .
-```
-
-The Dockerfile is multi-stage:
-1. **Build stage** — Installs Node 22 Alpine, resolves private npm packages, copies source
-2. **Runtime stage** — Copies built app, exposes port 8000
-
-### Deploy via Azure Pipelines (CI/CD)
-
-1. Push to the configured branch (typically `main` or `release/*`)
-2. Azure Pipelines auto-triggers on push
-3. Pipeline runs:
-   - `npm run lint`
-   - `npm test`
-   - Docker build
-   - Deploy to FIK cluster
-4. Monitor deploy in Azure DevOps
-
-### Manual Deploy via FIK CLI
-
-```bash
-# Deploy to UAT
-fik deploy shopify-backend --env fyndz5
-
-# Deploy to Production
-fik deploy shopify-backend --env fynd/m2
-```
-
-### Post-Deploy Verification
-
-```bash
-# Check health endpoint
-curl https://shopify-backend.extensions.fynd.com/_healthz
-# Expected: 200 OK
-
-curl https://shopify-backend.extensions.fynd.com/_readyz
-# Expected: 200 OK
-```
+How to build and deploy the Shopify services from the current `shopify-apps` monorepo.
 
 ---
 
-## shopify-pincode-checker
-
-### Build
+## 1. Choose the Target Branch
 
 ```bash
-cd shopify-pincode-checker
-
-# Build frontend
-cd web/frontend
-SHOPIFY_API_KEY=<promise-api-key> npm run build
-
-# Build Docker image
-cd ../..
-docker build -t shopify-pincode-checker:latest .
-```
-
-The Dockerfile:
-- Installs web + frontend dependencies
-- Builds frontend with Vite (`cd frontend && npm run build`)
-- Exposes port 8081
-
-### Deploy Shopify Extensions
-
-Before deploying app code, deploy Shopify extensions:
-
-```bash
-# Deploy to production
-shopify app deploy
-
-# Deploy to specific environment
-shopify app deploy --config shopify.app.promise-sit.toml
-```
-
-This uploads:
-- `fynd-promise-checkout` (Checkout UI extension)
-- `fynd-promise-pdp` (Theme extension)
-
-### Deploy App Server
-
-Push to the appropriate branch → Azure Pipelines handles Docker build + FIK deploy.
-
----
-
-## shopify-logistics-app
-
-### Build
-
-```bash
-cd shopify-logistics-app
-
-# Build frontend
-cd web/frontend
-SHOPIFY_API_KEY=<logistics-api-key> npm run build
-
-cd ../..
-docker build -t shopify-logistics-app:latest .
-```
-
-### Deploy Shopify Extensions
-
-```bash
-shopify app deploy
+cd shopify-apps
+git checkout uat
 # or
-shopify app deploy --config shopify.app.fynd-logistics-uat.toml
+git checkout production
+```
+
+If the target branch should be refreshed from the legacy service repositories, run the matching sync script first:
+
+```bash
+./scripts/sync_uat_services.sh
+./scripts/sync_production_services.sh
+```
+
+Review and commit any service snapshot changes before deploying.
+
+---
+
+## 2. Run Service Checks Locally
+
+Run commands inside the service you changed:
+
+```bash
+cd services/shopify-backend
+npm test
+npm run lint
+
+cd ../shopify-pincode-checker
+npm test
+npm run build
+
+cd ../shopify-logistics-app
+npm test
+npm run build
+```
+
+There is no root monorepo npm workspace command for all three services.
+
+---
+
+## 3. Trigger Azure Deployment
+
+The active pipeline is `shopify-apps/azure-pipeline.yaml`. It triggers on `deploy.*` tags only.
+
+```bash
+source scripts/tagdeploy.sh
+tagdeploy <env>
+```
+
+Useful variants:
+
+```bash
+tagdeploy cmlz0 --services shopify-backend
+tagdeploy cmlz0 --services shopify-backend,shopify-logistics-app
+tagdeploy cmlz0 --build-all
+tagdeploy fynd --services shopify-pincode-checker
+```
+
+The root pipeline builds services from `services/*` and can skip unchanged services when `buildOnlyWhenChanged` is honored by the shared infrastructure template.
+
+---
+
+## 4. Deploy Shopify Extensions
+
+Shopify-hosted extension assets are deployed separately with Shopify CLI from the relevant app service root.
+
+### Fynd Promise
+
+```bash
+cd services/shopify-pincode-checker
+npm run deploy
+
+# UAT/test config
+shopify app deploy --config shopify.app.pincode-serviceability-test.toml
 ```
 
 Deploys:
-- `fullfillment-extension` (Order details block)
-- `fynd-promise-checkout` (Checkout UI extension)
 
----
+- `fynd-promise-checkout`
+- `fynd-promise-pdp`
 
-## Environment-Specific Deployments
-
-| Target | Config File | FIK Environment |
-|--------|------------|-----------------|
-| Dev | `shopify.app.*.toml` (dev variant) | local / ngrok |
-| SIT | `shopify.app.*.sit.toml` | `fyndz0` |
-| UAT | `shopify.app.fynd-*-uat.toml` | `fyndz5` |
-| Production | `shopify.app.toml` | `fynd/m2` |
-
----
-
-## Database Migrations
-
-The backend uses MongoDB — no migration scripts are needed for most changes.
-
-For index changes:
+### Fynd Logistics
 
 ```bash
+cd services/shopify-logistics-app
+npm run deploy
+
+# UAT config
+shopify app deploy --config shopify.app.fynd-logistics-uat.toml
+
+# Production config
+shopify app deploy --config shopify.app.fynd-logistics-prod.toml
+```
+
+Deploys the logistics admin extensions plus the bundled checkout/PDP extension copies present in the logistics app.
+
+---
+
+## 5. Post-Deploy Verification
+
+```bash
+curl -i https://shopify-backend.extensions.fynd.com/
+curl -I https://shopify-backend.extensions.fynd.com/api-docs
+```
+
+Then verify:
+
+- Azure pipeline completed for the intended services.
+- Sentry and logs have no new error spike.
+- Shopify app install/OAuth works for a test store.
+- Promise checkout/PDP extensions render after extension deploy.
+- Logistics order details extensions can call backend APIs.
+
+`/_healthz` and `/_readyz` are not current backend endpoints.
+
+---
+
+## Database Indexes
+
+For backend index changes:
+
+```bash
+cd services/shopify-backend
 npm run create-indexes
-# Runs scripts/create-indexes.js against the configured MongoDB
 ```
 
-Run this after any schema changes that add new indices.
-
----
-
-## Rolling Back
-
-### FIK Rollback
-
-```bash
-# Roll back to previous deployment
-fik rollback shopify-backend --env fyndz5
-```
-
-### Docker Tag Rollback
-
-If you know the previous image tag:
-
-```bash
-docker pull shopify-backend:<previous-tag>
-fik deploy shopify-backend --image shopify-backend:<previous-tag> --env fyndz5
-```
-
----
-
-## Deployment Checklist
-
-Before deploying to production:
-
-- [ ] All tests pass (`npm test`)
-- [ ] Linting clean (`npm run lint`)
-- [ ] Shopify extensions deployed (if changed)
-- [ ] MongoDB indexes updated (if schema changed)
-- [ ] Environment variables updated in Vault/Secrets (if new vars added)
-- [ ] Health checks pass after deploy
-- [ ] Monitor Sentry for new errors in first 30 minutes
+This runs `scripts/create-indexes.js` against the configured MongoDB.

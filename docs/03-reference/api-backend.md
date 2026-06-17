@@ -7,7 +7,7 @@ sidebar_position: 1
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 Complete reference for all `shopify-backend` API endpoints. Interactive docs available at `/api-docs` (Swagger UI).
 
@@ -27,9 +27,17 @@ Most routes require one of:
 
 | Method | Path | Auth | Response |
 |--------|------|------|---------|
-| GET | `/_healthz` | None | `200 OK` — server alive |
-| GET | `/_readyz` | None | `200 OK` — ready to serve |
-| GET | `/` | None | `200 OK` — root health probe |
+| GET | `/` | None | `200 OK` — root health probe (returns `<html><body>200 OK</body></html>`) |
+
+There are no `/_healthz` or `/_readyz` endpoints. Only `GET /` returns 200; every other unmatched route falls through to the catch-all 404 handler:
+
+```json
+{
+  "status": "error",
+  "message": "Route not found",
+  "path": "<originalUrl>"
+}
+```
 
 ---
 
@@ -38,31 +46,35 @@ Most routes require one of:
 ### Shopify Store Webhooks
 
 ```
-POST /webhook/store/:shop/:topic
 POST /webhook/store/:shop/:topic/:subtopic
 ```
 
 **Auth:** HMAC (`?app=fynd-logistics` or `?app=fynd-promise`)
 
+> Only the 3-segment `:shop/:topic/:subtopic` route is mounted. The handler joins `:topic` and `:subtopic` into the effective topic string (`<topic>/<subtopic>`), so a topic like `app/uninstalled` is split across both path params.
+
 **Path params:**
 - `:shop` — Shopify store domain (e.g., `my-store.myshopify.com`)
-- `:topic` — Webhook topic (e.g., `orders/create`)
+- `:topic` / `:subtopic` — Webhook topic split into two segments (e.g., `orders` + `create` → `orders/create`)
 
-**Handled topics:**
+**Handled topics** (`controllers/webhook.controller.js`):
 
-| Topic | Handler | Action |
-|-------|---------|--------|
-| `orders/create` | shopifyWebhookService | Trigger fulfillment |
-| `orders/updated` | shopifyWebhookService | Update order state |
-| `orders/cancelled` | shopifyWebhookService | Cancel fulfillment |
-| `inventory_levels/update` | shopifyWebhookService | Sync inventory |
-| `locations/create` | shopifyWebhookService | Create Fynd location |
-| `locations/update` | shopifyWebhookService | Update location |
-| `products/update` | shopifyWebhookService | Sync product |
-| `fulfillments/create` | shopifyWebhookService | Track fulfillment |
-| `fulfillments/update` | shopifyWebhookService | Update fulfillment |
-| `app/uninstalled` | shopifyWebhookService | Clean up store |
-| `app_subscriptions/update` | shopifyWebhookService | Update subscription |
+| Topic | Action |
+|-------|--------|
+| `inventory_levels/update` | Resolve variant/product via GraphQL, sync product mapping |
+| `locations/create` | Fetch + save Fynd location |
+| `locations/update` | Fetch + save Fynd location |
+| `orders/create` | Promise billing tracking and/or logistics order processing |
+| `app_subscriptions/update` | Validate against Shopify, update/cancel subscription |
+| `app/uninstalled` | Clean up store data |
+| `fulfillments/create` | Track new fulfillment (logistics) |
+| `fulfillments/update` | Handle fulfillment cancellation (logistics) |
+| `returns/cancel` | Handle return cancellation (logistics) |
+| `returns/request` | Handle customer return request (logistics) |
+| `returns/approve` | Handle return approval (logistics) |
+| `returns/decline` | Handle return decline (logistics) |
+
+> `orders/updated`, `orders/cancelled` and `products/update` are **not** handled — they fall through to the `default` branch and are logged as "invalid topic".
 
 ### GDPR Webhooks
 
@@ -316,46 +328,29 @@ POST /config/courier-partners/clearSeed
 
 ---
 
-## OTP Routes (`/logistics/otp/*`)
+## Account Linking & Email Verification (`/logistics/*`)
 
-### Send OTP
+> The standalone `/logistics/otp/*` routes are defined in `routes/otpRoutes.js` but **not mounted** in `index.js`. OTP/account-linking is handled by the routes below, which are all session-authenticated.
 
-```
-POST /logistics/otp/send
-```
-
-**Auth:** None (but called from session-authenticated frontend)
-
-**Body:**
-```json
-{ "email": "company@example.com" }
-```
-
-### Verify OTP
+### Account Linking (Sign-in to existing Fynd account)
 
 ```
-POST /logistics/otp/verify
+POST /logistics/link          — Initiate link-existing flow (sends OTP)
+POST /logistics/link/verify   — Verify OTP + complete link
 ```
 
-**Body:**
-```json
-{
-  "email": "company@example.com",
-  "otp": "123456"
-}
+**Auth:** Session Token
+
+### Email Verification (Create-new account flow)
+
+```
+POST /logistics/email/send-otp              — Send OTP to candidate company email
+POST /logistics/email/verify-otp            — Verify OTP, mark email verified
+GET  /logistics/email/verification-status   — Read current verified-email state
+POST /logistics/email/reset-verification    — Clear verified-email state on cancel
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "companies": [
-      { "companyId": 123, "name": "My Company", "uid": "UID123" }
-    ]
-  }
-}
-```
+**Auth:** Session Token
 
 ---
 
@@ -406,15 +401,16 @@ PUT /logistics/setup
 ### Fulfillment
 
 ```
-POST /logistics/fulfill/orders/bulk                    — Fulfill multiple orders
-POST /logistics/fulfill/orders/:orderId                — Fulfill single order
-GET  /logistics/fulfill/orders/:orderId/status         — Get fulfillment status
-GET  /logistics/fulfill/orders/:orderId/fulfillment-orders  — Get fulfillment orders
-GET  /logistics/fulfill/orders/:orderId/fulfillment-status  — Get detailed status
-POST /logistics/fulfill/fulfillment                    — Fulfill a fulfillment order
+POST /logistics/fulfill/orders/bulk                               — Fulfill multiple orders
+GET  /logistics/fulfill/orders/:orderId/fulfillment-orders        — Get fulfillment orders
+POST /logistics/fulfill/fulfillment                               — Fulfill a fulfillment order
+POST /logistics/fulfill/fulfillment/carrier-assignment-status     — Poll carrier assignment status
 ```
 
 **Auth:** Session Token + `logisticsEnabled` + `fulfillmentLimitCheck`
+
+> The following routes are commented out / inactive in `routes/logisticsRoutes.js` and will 404:
+> `POST /logistics/fulfill/orders/:orderId`, `GET /logistics/fulfill/orders/:orderId/status`, `GET /logistics/fulfill/orders/:orderId/fulfillment-status`.
 
 ### Companies & Account Linking
 
@@ -431,13 +427,23 @@ POST /logistics/link/verify                         — Verify OTP + complete li
 ### Location Management
 
 ```
-GET  /logistics/locations                           — List store locations
-PUT  /logistics/locations/:locationId/mapping       — Map single location
-PUT  /logistics/locations/mappings                  — Bulk map locations
-POST /logistics/locations/create                    — Create new Fynd location
+GET  /logistics/locations/pincode/:pincode  — Resolve city/state/country by pincode
+POST /logistics/locations/create            — Create a new Fynd location
 ```
 
 **Auth:** Session Token
+
+> Commented out / inactive (will 404): `GET /logistics/locations`, `PUT /logistics/locations/:locationId/mapping`, `PUT /logistics/locations/mappings`.
+
+### Magic Link
+
+```
+GET /logistics/magic-link
+```
+
+**Auth:** Session Token
+
+**Purpose:** Generate a one-time magic link into the Fynd console.
 
 ### Shipments
 
@@ -460,6 +466,7 @@ POST /logistics/shipments/documents
 ```
 GET  /logistics/orders/:orderId/fulfillments/return-eligibility  — Check eligibility
 POST /logistics/returns                                          — Create return
+POST /logistics/returns/carrier-assignment-status               — Poll return carrier assignment status
 ```
 
 **Auth:** Session Token
@@ -487,14 +494,24 @@ POST /logistics/promise/check
 
 ## Admin Routes (`/logistics/admin/*`)
 
-All admin routes require **Basic Auth** (`BOLTIC_USERNAME` / `BOLTIC_PASSWORD`).
+Admin authentication is **OTP + session based** (not Basic Auth). All `/admin/api/*` routes after the auth endpoints are protected by `requireAdminSession`, `enforceAdminOrigin`, `enforceCsrfToken`, and `auditAdminAction`.
+
+### Authentication
+
+```
+POST /logistics/admin/api/auth/request-otp   — Request login OTP
+POST /logistics/admin/api/auth/verify-otp    — Verify OTP, establish session
+POST /logistics/admin/api/auth/logout        — Logout (session + CSRF required)
+GET  /logistics/admin/api/auth/session       — Read current admin session
+```
+
+> There is no `/logistics/admin/api/validate-password` route.
 
 ### Dashboard
 
 ```
-GET  /logistics/admin                               — Serve admin dashboard HTML
-POST /logistics/admin/api/validate-password         — Validate admin password
-GET  /logistics/admin/api/stats                     — Dashboard statistics
+GET  /logistics/admin              — Serve admin dashboard HTML
+GET  /logistics/admin/api/stats    — Dashboard statistics
 ```
 
 ### Delivery Partners
@@ -528,8 +545,9 @@ DELETE /logistics/admin/api/promise/courier-partners/:id
 GET    /logistics/admin/api/promise/stores
 PATCH  /logistics/admin/api/promise/stores/:shop/toggle-promise
 PATCH  /logistics/admin/api/promise/stores/:shop/courier-partners
-PATCH  /logistics/admin/api/promise/stores/:shop/promise-view
 ```
+
+> `PATCH /logistics/admin/api/promise/stores/:shop/promise-view` is commented out / inactive.
 
 ---
 

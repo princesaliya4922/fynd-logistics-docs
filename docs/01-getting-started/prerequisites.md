@@ -7,9 +7,9 @@ sidebar_position: 1
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-Before you can run any of the Fynd Shopify projects locally, you need the following tools and access.
+Before you can run any of the Fynd Shopify services locally from the `shopify-apps` monorepo, you need the following tools and access.
 
 ---
 
@@ -17,7 +17,7 @@ Before you can run any of the Fynd Shopify projects locally, you need the follow
 
 ### Node.js
 
-All three projects require **Node.js 18+** (backend requires ≥18.0.0; frontends use React 18 + Vite 6).
+All three services require **Node.js 18+**. Node 20 LTS is a good local default.
 
 ```bash
 node --version   # should be v18.x or higher
@@ -77,7 +77,7 @@ Create a free cluster at [cloud.mongodb.com](https://cloud.mongodb.com). Copy th
 
 ### Redis
 
-The `shopify-logistics-app` backend uses Redis for session storage.
+`shopify-backend` requires Redis at startup, and `shopify-logistics-app` uses Redis for Shopify session storage.
 
 **Option A — Docker:**
 ```bash
@@ -85,7 +85,7 @@ docker run -d -p 6379:6379 --name fynd-redis redis:7
 ```
 
 **Option B — Redis Cloud:**
-Create a free instance at [redis.io/try-free](https://redis.io/try-free). Copy the connection string for `REDIS_URL`.
+Create a free instance at [redis.io/try-free](https://redis.io/try-free). Copy the connection string for `REDIS_SHOPIFY_BACKEND_READ_WRITE`.
 
 > **Note:** `shopify-pincode-checker` uses SQLite for sessions (file-based, no setup needed).
 
@@ -100,7 +100,7 @@ Create a free instance at [redis.io/try-free](https://redis.io/try-free). Copy t
 | Fynd Backend URL | The `BACKEND_URL` env var pointing to the `shopify-backend` | Get from team — internal service |
 | Fynd API Key (`BASE_API_KEY`) | Auth header `x-api-key` for backend → Fynd API calls | Get from team — secret |
 | Sentry DSN | Error tracking (optional locally) | Get from team or leave blank |
-| Azure DevOps Token | Required to install private npm packages (`fit`, `fdk-client`) | Get from team — set as `AZURE_PRIVATE_TOKEN_BASE64` |
+| Azure DevOps Token | Required to install private npm packages such as `fit` and Fynd SDK packages | Get from team — set as `AZURE_PRIVATE_TOKEN_BASE64` when the Docker/npm flow requires it |
 
 ---
 
@@ -114,4 +114,4 @@ Create a free instance at [redis.io/try-free](https://redis.io/try-free). Copy t
 | MongoDB / Mongoose | The backend uses MongoDB heavily |
 | REST APIs | All integrations are REST |
 
-Not required but helpful: Shopify CLI, Polaris components, Jotai state management, Convict config.
+Not required but helpful: Polaris components, Jotai state management, Convict config, Azure Pipelines tag-based deploys.

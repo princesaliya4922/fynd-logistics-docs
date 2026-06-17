@@ -7,7 +7,7 @@ sidebar_position: 1
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 This document provides the high-level system architecture of the Fynd Shopify Ecosystem.
 
@@ -27,7 +27,7 @@ graph LR
     subgraph Apps["Fynd Shopify Apps"]
         PromiseFE["Fynd Promise Frontend<br/>shopify-pincode-checker<br/>React 18 + Vite + Polaris"]
         LogisticsFE["Fynd Logistics Frontend<br/>shopify-logistics-app<br/>React 18 + Vite + Polaris"]
-        Backend["Shared Backend<br/>backend<br/>Node.js + Express"]
+        Backend["Shared Backend<br/>shopify-backend<br/>Node.js + FIT/Express"]
     end
 
     subgraph Extensions["Shopify Extensions"]
@@ -134,22 +134,18 @@ Same as Promise app, with additions:
 
 ## Deployment Architecture
 
-All three services are deployed as Docker containers on a Kubernetes cluster managed by **FIK** (Fynd Infrastructure Kit).
+All three services are deployed from the `shopify-apps` monorepo as independent Docker builds under `services/`. Environment-specific runtime wiring is managed by Fynd infrastructure/FIK configuration.
 
 ```
-FIK (Helm-like Kubernetes framework)
-├── shopify-pincode-checker → pincode-checker.extensions.*
+shopify-apps/services
+├── shopify-pincode-checker -> pincode-checker.extensions.*
 │   └── Deployment (Node.js Express + served React SPA)
-├── shopify-logistics-app → shopify-logistics.extensions.*
+├── shopify-logistics-app -> shopify-logistics.extensions.*
 │   └── Deployment (Node.js Express + served React SPA)
-└── shopify-backend → shopify-backend.extensions.*
+└── shopify-backend -> shopify-backend.extensions.*
     ├── Deployment (Express API server)
-    └── CronJob (billing_trigger — runs on 7th, 14th, 21st, 28th)
+    └── CronJob entry point (MODE=cron, CRON_JOB=<job>)
 ```
-
-**Resource defaults:**
-- CPU request: 100m, limit: 500m
-- Memory request: 400Mi, limit: 1000Mi
 
 For full deployment details → [Infrastructure](../05-operations/infrastructure.md)
 

@@ -8,7 +8,7 @@ sidebar_position: 3
 > **Status:** Accepted
 > **Owner:** Engineering — Fynd Extensions Team
 > **Date:** 2026-03-23
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
@@ -46,7 +46,7 @@ Use **Docusaurus** (React-based static site generator) deployed on **Vercel** to
 
 ### Separate `fynd-docs` Repo
 
-- Keeps docs independent from any single service
+- Keeps docs independent from the `shopify-apps` monorepo while documenting all services together
 - Docs contributors don't need access to production code repos
 - Docs PRs reviewed separately from code PRs
 - Single deploy pipeline for all documentation
@@ -60,7 +60,7 @@ Use **Docusaurus** (React-based static site generator) deployed on **Vercel** to
 - Single source of truth for all three projects
 
 **Negative:**
-- Docs site separate from code — risk of falling out of sync
+- Docs site separate from code — risk of falling out of sync, especially after monorepo service moves
 - Requires maintaining a separate repo
 - Engineers must remember to update docs when changing code
 

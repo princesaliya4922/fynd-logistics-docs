@@ -7,13 +7,15 @@ sidebar_position: 2
 
 > **Owner:** Product & Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
 ## What Is Fynd Logistics?
 
 **Fynd Logistics** is a Shopify app that connects Shopify orders to Fynd's fulfillment network for end-to-end logistics management.
+
+> **Naming:** "Fynd Logistics" is the internal/product name. The published production Shopify app name is **"Fynd Ship"** (`shopify.app.fynd-logistics-prod.toml`). Merchants installing from the App Store see it as **Fynd Ship**.
 
 **The problem it solves:**
 Indian Shopify merchants need to manage order fulfillment, courier assignments, shipment tracking, and returns — often juggling multiple courier integrations. Fynd Logistics replaces all of this with a single integration.
@@ -38,7 +40,7 @@ When a customer places an order on Shopify, Fynd Logistics automatically creates
 | Automated fulfillment | Orders → shipments without manual intervention |
 | Multi-courier | FLP selects cheapest or fastest courier automatically |
 | Unified tracking | Shipment status visible in Shopify Admin order page |
-| Returns management | Initiate and track returns from Shopify Admin |
+| Returns management | Merchant-initiated returns, customer-requested returns (request/approve/decline), return cancellation, and carrier-assignment tracking — all from Shopify Admin |
 | Existing Fynd accounts | Link your existing Fynd company with OTP — no re-registration |
 
 ---
@@ -74,9 +76,12 @@ When a customer places an order on Shopify, Fynd Logistics automatically creates
 
 ## Business Metrics
 
-- **Free plan:** First 50 fulfillments/month are free
-- **Growth plan:** ₹1 per fulfillment (usage-based, ₹999 cap/month)
-- Billed via Shopify billing (weekly cycle)
+Plans are **FREE** and **PAID**, billed via Shopify billing.
+
+- **Free plan:** limited to **5** fulfillments (current backend config); beyond the limit the backend returns HTTP 403 and the merchant is prompted to upgrade.
+- **Paid plan:** usage-based fulfillment billing.
+
+> Plan tiers, limit values, and enforcement are **backend/billing-config values** in `shopify-backend` — the app's `/api/plan` and `/api/billing` endpoints are pass-throughs and the app does **not** implement limits. The backend billing config is the source of truth.
 
 ---
 
@@ -116,6 +121,19 @@ Merchants who already have a Fynd company account can link it without creating a
 6. Setup continues
 
 This prevents duplicate company registrations for merchants already on the Fynd platform.
+
+---
+
+## Returns Scope
+
+Fynd Logistics handles the full returns lifecycle, not just merchant-initiated returns:
+
+- **Merchant-initiated returns** — from the Fynd Returns block on the order page (can return multiple items/fulfillments at once).
+- **Customer-requested returns** — driven by Shopify return webhooks: `returns/request`, `returns/approve`, `returns/decline`.
+- **Return cancellation** — via the `returns/cancel` webhook.
+- **Carrier-assignment tracking** — return pickups are tracked through carrier-assignment polling.
+
+See [How To: Handle Returns](../04-how-to/handle-returns.md) for the operational detail.
 
 ---
 

@@ -7,9 +7,11 @@ sidebar_position: 1
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-How `shopify-backend` MongoDB data is synced to BigQuery for analytics.
+How `shopify-backend` MongoDB data is expected to sync to BigQuery for analytics.
+
+> **Current verification note:** The checked-out `transformations` repository does not currently contain `transformations/shopify/mongo/shopify_backend/*` or any `shopify_backend` transformation files. Treat the collection-level mapping below as historical/target documentation until the transformation project is restored or confirmed in another repository/branch.
 
 ---
 
@@ -48,6 +50,7 @@ flowchart LR
 Type: incremental sync using `updatedAt` cursor per collection.
 
 ```javascript
+// Historical/target path:
 // transformations/shopify/incremental-columns.js
 {
   'mongo.shopify_backend.stores': 'updatedAt',
@@ -69,7 +72,7 @@ Per run:
 
 ## Collection Coverage
 
-Synced now:
+Previously documented / target sync set:
 - `stores`
 - `orders`
 - `subscriptions`
@@ -77,7 +80,7 @@ Synced now:
 - `storeMappings`
 - `courierPartners`
 
-Not synced yet:
+Known MongoDB collections not covered by the previously documented sync set:
 - `shipments`
 - `returns`
 - `logistics`
@@ -91,7 +94,7 @@ Details: [Collections Synced](./collections-synced.md)
 
 ## Transformation Contract
 
-Each collection path:
+Expected collection path:
 
 ```text
 transformations/shopify/mongo/shopify_backend/<collection>/
@@ -145,6 +148,6 @@ Recovery loop:
 ## Ownership Boundaries
 
 - Source schema ownership: `shopify-backend`
-- Transform/schema ownership: `transformations`
+- Transform/schema ownership: `transformations`, but current `shopify_backend` transform location needs confirmation
 - Runtime orchestration ownership: Boltic pipeline operators
 - Analytics consumption ownership: reporting/data consumers

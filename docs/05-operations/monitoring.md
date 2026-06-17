@@ -7,7 +7,7 @@ sidebar_position: 3
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 How to monitor the health and performance of the Fynd Shopify Ecosystem.
 
@@ -64,7 +64,7 @@ PagerDuty is configured for production incident alerting.
 **Alert triggers:**
 - Sentry error spikes
 - Pod crash loops (Kubernetes)
-- Health check failures (`/_healthz`, `/_readyz`)
+- Service probe failures. Current backend code implements `GET /`, not `/_healthz` or `/_readyz`.
 - Ingress 5xx error rate exceeding threshold
 
 ---
@@ -73,14 +73,13 @@ PagerDuty is configured for production incident alerting.
 
 New Relic Application Performance Monitoring is available for production environments.
 
-**Enabled for:** `fynd` (production), `fyndz6`+
+**Enabled for:** environment-dependent. The backend reads `NEW_RELIC_ENABLED`, `NEW_RELIC_APP_NAME`, and `NEW_RELIC_LICENSE_KEY`.
 
 **Configuration:**
 ```bash
 NEW_RELIC_ENABLED=true
 NEW_RELIC_APP_NAME=shopify-backend
 NEW_RELIC_LICENSE_KEY=<key>
-NEW_RELIC_DISTRIBUTED_TRACING_ENABLED=true
 ```
 
 **What to monitor:**
@@ -104,15 +103,17 @@ The backend exports Prometheus metrics via `prom-file-client`.
 **Configuration:**
 ```bash
 METRICS_DIR=/path/to/metrics  # Directory where metrics files are written
+METRICS_FLUSH_INTERVAL_MS=30000
+K8S_POD_NAME=<pod-name>
 ```
 
 These are scraped by the Prometheus instance in the Kubernetes cluster and displayed in Grafana dashboards.
 
 ---
 
-## Winston Logging
+## Logging
 
-All three services use **Winston** for structured JSON logging.
+The embedded app servers use Winston. The backend primarily logs through `fit/tracing` and also wires Sentry error reporting.
 
 ### Log Format
 
@@ -153,6 +154,17 @@ All three services use **Winston** for structured JSON logging.
 | Redis latency | at most 10ms | over 100ms |
 | FLP API response time | at most 2s | over 10s |
 | Billing cron duration | at most 5 min | over 30 min |
+
+---
+
+## Endpoint Checks
+
+```bash
+curl -i https://shopify-backend.extensions.fynd.com/
+curl -I https://shopify-backend.extensions.fynd.com/api-docs
+```
+
+`/_healthz` and `/_readyz` are not current backend endpoints.
 
 ---
 

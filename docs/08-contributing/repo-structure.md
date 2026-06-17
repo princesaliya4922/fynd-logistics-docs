@@ -7,142 +7,127 @@ sidebar_position: 2
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-Quick reference for the directory layout of each project.
+Quick reference for the current `shopify-apps` monorepo layout. The three Shopify services used to live in individual repositories; the source-of-truth code now lives under `services/`.
 
 ---
 
-## shopify-backend
+## Monorepo Root
 
 ```
-shopify-backend/
-├── server.js                    # Process entry point
-├── index.js                     # Express app setup + route registration
-├── config.js                    # Convict config schema (all env vars)
+shopify-apps/
+├── README.md
+├── azure-pipeline.yaml          # tag-triggered monorepo pipeline
+├── docs/
+│   └── tagdeploy.md
+├── scripts/
+│   ├── import_service_repo.sh
+│   ├── sync_uat_services.sh
+│   ├── sync_production_services.sh
+│   └── tagdeploy.sh
+└── services/
+    ├── shopify-backend/
+    ├── shopify-pincode-checker/
+    └── shopify-logistics-app/
+```
+
+The sync scripts still copy tracked files from the legacy service repositories into the monorepo snapshots:
+
+| Monorepo Branch | Service | Source Branch |
+|-----------------|---------|---------------|
+| `uat` | `shopify-logistics-app` | `shopify-logistics-app@uat` |
+| `uat` | `shopify-pincode-checker` | `shopify-pincode-checker@sit` |
+| `uat` | `shopify-backend` | `shopify-backend@uat` |
+| `production` | `shopify-logistics-app` | `shopify-logistics-app@production` |
+| `production` | `shopify-pincode-checker` | `shopify-pincode-checker@master` |
+| `production` | `shopify-backend` | `shopify-backend@production` |
+
+---
+
+## `services/shopify-backend`
+
+```
+services/shopify-backend/
+├── server.js                    # process entry point; init Mongo/Redis; cron switch
+├── index.js                     # FIT/Express app setup and route registration
+├── config.js                    # Convict config schema
+├── configs/
+│   └── logistics.config.js
 ├── controllers/
-│   ├── services/                # Business logic
-│   │   ├── logisticsService.js  # Core logistics engine (186KB)
-│   │   ├── fulfilmentService.js # Fulfillment processing (53KB)
-│   │   ├── shopifyWebhookService.js # Webhook handlers (65KB)
-│   │   ├── returnService.js     # Returns (44KB)
-│   │   ├── shipmentService.js   # Shipment tracking (20KB)
-│   │   └── linkExistingService.js # OTP account linking (15KB)
-│   ├── fyndWebhookHandlers/     # Fynd platform webhook handlers
-│   ├── adminController.js       # Admin dashboard
-│   ├── promiseAdminController.js
-│   ├── logisticsController.js
+│   ├── services/                # business logic
+│   │   ├── adminAuthService.js
+│   │   ├── appUninstallService.js
+│   │   ├── emailVerificationService.js
+│   │   ├── fulfilmentService.js
+│   │   ├── linkExistingService.js
+│   │   ├── logisticsEngineConfig.js
+│   │   ├── logisticsService.js
+│   │   ├── returnService.js
+│   │   ├── shipmentService.js
+│   │   ├── shopifyWebhookService.js
+│   │   └── syncFulfilmentProcessor.js
+│   ├── utils/
+│   ├── validators/
+│   ├── adminAuthController.js
+│   ├── adminController.js
+│   ├── billing.js
+│   ├── emailVerificationController.js
 │   ├── fulfilment.controller.js
+│   ├── linkExistingController.js
+│   ├── logisticsController.js
+│   ├── promiseAdminController.js
 │   ├── return.controller.js
-│   ├── webhook.controller.js
-│   ├── store.controller.js
-│   └── serviceability.controller.js
+│   ├── serviceability.controller.js
+│   └── webhook.controller.js
 ├── middlewares/
-│   ├── shopifySessionAuth.js    # JWT verification
-│   ├── shopifyHmacAuth.js       # Webhook HMAC
-│   ├── basicAuth.js             # Basic auth
-│   ├── fulfillmentLimitCheck.js # Free plan enforcement
-│   ├── logisticsEnabled.js      # Feature flag check
+│   ├── adminAuth.js             # OTP session + CSRF/origin admin auth
+│   ├── basicAuth.js             # internal Basic Auth routes
+│   ├── fulfillmentLimitCheck.js
+│   ├── logisticsEnabled.js
 │   ├── metricsMiddleware.js
-│   └── securityMiddleware.js
+│   ├── securityMiddleware.js
+│   ├── shopifyHmacAuth.js
+│   └── shopifySessionAuth.js
 ├── model/                       # Mongoose schemas
-│   ├── index.js                 # Central model exports
-│   ├── stores.js
-│   ├── logistics.js
-│   ├── shipments.js
-│   ├── orders.js
-│   ├── returns.js
-│   └── [8 more models]
 ├── routes/
-│   ├── webhook.js
-│   ├── sync.js
-│   ├── serviceability.js
 │   ├── configuration.js
-│   ├── otpRoutes.js
+│   ├── flpWebhook.js
 │   ├── logisticsRoutes.js
-│   └── flpWebhook.js
-├── utils/
-│   ├── common/
-│   ├── fynd/                    # Fynd API wrappers
-│   ├── shopify/                 # Shopify API utilities
-│   ├── corsUtils.js
-│   ├── errorHandler.js
-│   ├── metrics.js
-│   └── swaggerConfig.js
-├── queue/                       # In-memory job queue
-├── cron/                        # Cron job definitions
-├── init/                        # Startup initializers
-├── redis/                       # Redis cache utilities
-├── fdk/                         # Fynd extension handler
-├── public/                      # Admin dashboard static files
+│   ├── otpRoutes.js             # present but not mounted
+│   ├── serviceability.js
+│   ├── sync.js
+│   └── webhook.js
+├── cron/
+├── data/
+├── fdk/
+├── init/
+├── jobs/
+├── public/admin/                # static admin dashboard assets
+├── queue/
+├── redis/cache/
+├── scripts/create-indexes.js
 ├── spec/
-│   ├── testFiles/
-│   └── testUtilites/
+├── utils/
 ├── Dockerfile
-├── azure-pipelines.yml
+├── azure-pipelines.yml          # legacy/service-local pipeline file
 └── package.json
 ```
 
 ---
 
-## shopify-pincode-checker
+## `services/shopify-pincode-checker`
 
 ```
-shopify-pincode-checker/
-├── web/                         # Backend + Frontend monorepo
-│   ├── index.js                 # Express mini-server
-│   ├── shopify.js               # Shopify SDK init (SQLite sessions)
-│   ├── config.js                # Convict config
-│   ├── fyndIntegration.js       # Install hook: register + create webhooks
-│   ├── billing.js               # Billing plan definitions
-│   ├── logger.js
-│   ├── sentry.js
-│   ├── privacyPolicy.js
-│   ├── package.json             # Backend deps
-│   └── frontend/                # React SPA
-│       ├── index.jsx            # React root
-│       ├── App.jsx              # Providers + routing
-│       ├── Routes.jsx           # File-based routing
-│       ├── vite.config.js
-│       ├── pages/
-│       │   ├── index.jsx
-│       │   ├── settings.jsx
-│       │   └── pricing.jsx
-│       ├── components/
-│       │   ├── RegionHandle.jsx
-│       │   ├── UserHandle.jsx
-│       │   ├── setting/         # Delivery settings UI
-│       │   ├── billing/         # Billing UI
-│       │   ├── providers/       # App Bridge, Polaris, Query
-│       │   └── common/
-│       ├── hooks/
-│       ├── locales/             # i18n: en, fr, de
-│       └── utils/
-├── extensions/
-│   ├── fynd-promise-checkout/   # Checkout UI extension
-│   │   ├── src/Checkout.jsx
-│   │   └── shopify.extension.toml
-│   └── fynd-promise-pdp/        # Theme extension
-│       ├── assets/pincodeService.js
-│       └── shopify.extension.toml
-├── spec/
-├── shopify.app.toml
-├── Dockerfile
-└── package.json                 # Root workspace
-```
-
----
-
-## shopify-logistics-app
-
-```
-shopify-logistics-app/
-├── web/                         # Backend + Frontend monorepo
-│   ├── index.js                 # Express mini-server (Redis sessions)
-│   ├── shopify.js               # Shopify SDK init
-│   ├── config.js
-│   ├── fyndIntegration.js
+services/shopify-pincode-checker/
+├── web/
+│   ├── index.js                 # Express mini-server and API proxy
+│   ├── shopify.js               # Shopify SDK init with SQLite sessions
+│   ├── config.js                # HOST, BACKEND_URL, BASE_API_KEY, SENTRY_DSN
+│   ├── fyndIntegration.js       # install hook: register store + webhooks
 │   ├── billing.js
+│   ├── privacyPolicy.js
+│   ├── package.json
 │   └── frontend/
 │       ├── index.jsx
 │       ├── App.jsx
@@ -150,41 +135,64 @@ shopify-logistics-app/
 │       ├── vite.config.js
 │       ├── pages/
 │       ├── components/
-│       │   ├── RegionHandle.jsx
-│       │   ├── UserHandle.jsx
-│       │   ├── setting/         # Full setup flow components
-│       │   │   ├── FyndSetup.jsx
-│       │   │   ├── FyndSuccessSetup.jsx
-│       │   │   ├── FyndExistingSetup.jsx
-│       │   │   ├── EmailStep.jsx
-│       │   │   ├── OtpStep.jsx
-│       │   │   ├── SalesChannelSelection.jsx
-│       │   │   └── views/ViewRenderer.jsx
-│       │   ├── companySelection/ # Legacy components
-│       │   ├── createNewAccount/
-│       │   ├── billing/
-│       │   ├── providers/
-│       │   └── common/
 │       ├── hooks/
-│       ├── store/               # Jotai atoms
-│       │   ├── navigationManager.js
-│       │   ├── companyAtoms.js
-│       │   ├── logisticsAtom.js
-│       │   ├── setupAtoms.js
-│       │   └── planAtoms.js
-│       ├── utils/
-│       │   └── apiClient.js     # useLogisticsApi hook
-│       ├── constants.js
-│       └── locales/
+│       ├── locales/
+│       └── utils/
 ├── extensions/
-│   ├── fullfillment-extension/  # Admin UI extension
-│   │   ├── src/
-│   │   │   ├── BlockExtension.jsx       # Order details block
-│   │   │   └── ReturnBlockExtension.jsx # Returns block
+│   ├── fynd-promise-checkout/
+│   │   ├── src/Checkout.jsx
+│   │   ├── locales/
 │   │   └── shopify.extension.toml
-│   └── fynd-promise-checkout/   # Shared checkout extension
-├── spec/
+│   └── fynd-promise-pdp/
+│       ├── assets/pincodeService.js
+│       ├── blocks/pincode_service.liquid
+│       ├── snippets/
+│       └── shopify.extension.toml
+├── spec/testFiles/
+├── spec/testUtilites/
 ├── shopify.app.toml
+├── shopify.app.fynd-promise-testing.toml
+├── shopify.app.pincode-serviceability-test.toml
+├── Dockerfile
+└── package.json
+```
+
+---
+
+## `services/shopify-logistics-app`
+
+```
+services/shopify-logistics-app/
+├── web/
+│   ├── index.js                 # Express mini-server and API proxy
+│   ├── shopify.js               # Shopify SDK init with Redis sessions
+│   ├── config.js                # includes REDIS_SHOPIFY_BACKEND_READ_WRITE
+│   ├── fyndIntegration.js       # install hook: register store + webhooks
+│   ├── billing.js
+│   ├── privacyPolicy.js
+│   ├── package.json
+│   └── frontend/
+│       ├── index.jsx
+│       ├── App.jsx
+│       ├── Routes.jsx
+│       ├── pages/
+│       ├── components/
+│       ├── config/
+│       ├── hooks/
+│       ├── store/               # Jotai atoms + navigation manager
+│       ├── locales/
+│       └── utils/
+├── extensions/
+│   ├── fullfillment-extension/  # order detail blocks
+│   ├── order-fullfilment/       # order actions, bulk fulfill, label print
+│   ├── fynd-promise-checkout/   # logistics-bundled checkout extension
+│   └── fynd-promise-pdp/        # logistics-bundled PDP extension
+├── spec/testFiles/
+├── spec/testUtilites/
+├── shopify.app.fynd-logistics-dev-devx.toml
+├── shopify.app.fynd-logistics-uat.toml
+├── shopify.app.fynd-logistics-prod.toml
+├── shopify.app.toml             # default file is Promise-branded, not prod logistics
 ├── docker-compose.yml
 ├── Dockerfile
 └── package.json

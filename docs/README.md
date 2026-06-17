@@ -7,17 +7,17 @@ sidebar_position: 0
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Active
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-Welcome to the unified documentation for the **Fynd Shopify Ecosystem** — a suite of Shopify apps and a shared backend that enable Indian merchants to use Fynd's logistics and delivery-promise infrastructure directly from their Shopify stores.
+Welcome to the unified documentation for the **Fynd Shopify Ecosystem** — a suite of Shopify apps and a shared backend that enable Indian merchants to use Fynd's logistics and delivery-promise infrastructure directly from their Shopify stores. The production codebase now lives in the `shopify-apps` monorepo.
 
 ## What's Documented Here
 
 | Project | Purpose |
 |---------|---------|
-| **shopify-pincode-checker** | Shopify app for **Fynd Promise** — shows delivery date promises on product and checkout pages |
-| **shopify-logistics-app** | Shopify app for **Fynd Logistics** — connects Shopify orders to Fynd's fulfillment network |
-| **shopify-backend** | Shared Node.js/Express backend that powers both apps |
+| `shopify-apps/services/shopify-pincode-checker` | Shopify app for **Fynd Promise** — shows delivery date promises on product and checkout pages |
+| `shopify-apps/services/shopify-logistics-app` | Shopify app for **Fynd Logistics** — connects Shopify orders to Fynd's fulfillment network |
+| `shopify-apps/services/shopify-backend` | Shared Node.js/FIT-Express backend that powers both apps |
 
 ## How to Use These Docs
 

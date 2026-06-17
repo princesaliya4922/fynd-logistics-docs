@@ -7,11 +7,28 @@ sidebar_position: 6
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
-## Application Rollback (Kubernetes)
+## Application Rollback
+
+Deployments originate from `shopify-apps` tags (`deploy.*`). For a code rollback, first decide whether to roll back the Kubernetes deployment to a previous image or revert/retag a known-good monorepo commit.
+
+### Retag a Known-Good Commit
+
+```bash
+cd shopify-apps
+git checkout <known-good-commit-or-branch>
+source scripts/tagdeploy.sh
+tagdeploy <env> --services shopify-backend
+```
+
+Use `--services` when only one service needs to rebuild; use `--build-all` when the deployment needs all three services rebuilt from the selected commit.
+
+---
+
+## Kubernetes Rollback
 
 ### Using FIK CLI
 
@@ -66,7 +83,7 @@ For data corruption:
 
 ## Shopify Extension Rollback
 
-Shopify extensions versioned separately. If a bad extension version is deployed:
+Shopify extensions are versioned separately in Shopify. If a bad extension version is deployed:
 
 1. Revert extension code in the repo
 2. Run `shopify app deploy` to push the previous version
@@ -81,7 +98,7 @@ Shopify extensions versioned separately. If a bad extension version is deployed:
 - [ ] Identify the bad deploy (check Sentry, logs, metrics)
 - [ ] Alert team of rollback
 - [ ] Execute rollback (kubectl or FIK)
-- [ ] Verify health endpoints return 200
+- [ ] Verify `GET /` returns 200 and `/api-docs` loads
 - [ ] Verify Sentry error rate drops
 - [ ] Confirm functionality with a test request
 - [ ] Write post-mortem

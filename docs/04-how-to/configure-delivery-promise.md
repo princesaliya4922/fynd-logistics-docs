@@ -7,7 +7,7 @@ sidebar_position: 6
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 How to configure the delivery promise settings that determine what customers see.
 
@@ -15,18 +15,19 @@ How to configure the delivery promise settings that determine what customers see
 
 ## Promise View Options
 
-The `promiseView` setting controls how the delivery date is displayed:
+The `promiseView` setting controls how the delivery date is displayed. The default is `range`. The settings UI (`StepProgress.jsx`) offers three options — there is **no `fixed`** option in the app:
 
-| Value | Display Example |
-|-------|----------------|
-| `range` | "Delivery by Mon 25 Mar – Wed 27 Mar" |
-| `fixed` | "Delivery by Wed 27 Mar" |
+| Value | Title (in UI) | Meaning |
+|-------|---------------|---------|
+| `range` | Date Range | A delivery window, e.g. "Delivery by Mon 25 Mar – Wed 27 Mar" |
+| `min` | Minimum Limit | Earliest expected delivery date |
+| `max` | Maximum Limit | Latest expected delivery date |
 
 ---
 
 ## Delivery Preference
 
-The `deliveryPreference` setting in the `stores` MongoDB collection controls the promise calculation algorithm used by the serviceability API.
+The app submits `deliveryPreference` to the backend (default value is the string `'1'`). How it maps to a promise-calculation algorithm is **backend-owned** and not confirmable from this app repo.
 
 ---
 
@@ -36,14 +37,11 @@ The `deliveryPreference` setting in the `stores` MongoDB collection controls the
 2. Navigate to **Settings**
 3. In **Delivery Widget**:
    - Select **Warehouse location**
-   - Select **Promise view** (Range or Fixed)
+   - Select **Promise view** (Date Range / Minimum Limit / Maximum Limit)
    - Set **Processing time** (e.g., 1 day)
 4. Click **Save**
 
-The settings are saved to:
-- `stores.deliveryPreference`
-- `stores.promiseView`
-- `storeMappings` (location + processing time)
+When you save, the app sends the configuration to the backend via `POST ${BACKEND_URL}/config/merchant` (the app injects `shop` server-side). The persistence of these values (e.g. into MongoDB collections such as `stores.deliveryPreference` / `stores.promiseView` / `storeMappings`) is **backend-owned** and not confirmable from this app repo.
 
 ---
 
@@ -60,6 +58,8 @@ The logistics app also has delivery promise settings in the setup form:
 ---
 
 ## Promise Calculation Logic
+
+> The promise calculation runs entirely in the central Fynd backend (backend-owned). The steps below describe expected backend behavior and are not implemented in the `shopify-pincode-checker` app repo.
 
 When a customer checks a pincode:
 
@@ -85,6 +85,8 @@ Example: `cut_off_time = "15:00"`
 
 ## Updating Promise Settings via API
 
+> The endpoints in this section are **backend / logistics service** endpoints (not routes in the `shopify-pincode-checker` app). The app itself only writes config via `POST ${BACKEND_URL}/config/merchant`.
+
 ```bash
 POST /config/fyndPromise
 Content-Type: application/json
@@ -101,6 +103,8 @@ x-api-key: <base_api_key>
 ---
 
 ## Promise Courier Partners (Admin)
+
+> These `PATCH /logistics/admin/...` routes are **backend / logistics service** endpoints, not part of the Promise app.
 
 Admins can configure which courier partners are used for promise calculations:
 

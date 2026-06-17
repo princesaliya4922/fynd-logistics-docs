@@ -7,39 +7,44 @@ sidebar_position: 7
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
 ## What the Billing Cron Does
 
-The billing cron processes usage-based charges for all merchants on the **Growth plan**. It runs weekly and:
+The billing cron processes usage-based charges for merchants on the **Growth plan**. Actual logic (`controllers/billing.js → processWeeklyBilling`):
 
-1. Finds all active subscriptions where `billingCycleEnd <= now`
+1. Finds subscriptions matching `{ status: 'ACTIVE', plan: 'Growth' }` (there is **no** `billingCycleEnd <= now` filter).
 2. For each subscription:
-   - Counts orders in the billing period from MongoDB
-   - Deducts the 50-order free tier
-   - Creates a Shopify Usage Record for billable orders (₹1 each)
-   - Advances the billing cycle dates
+   - Computes a billing window and skips if a transaction already exists for that window.
+   - Counts orders in the period from MongoDB.
+   - Creates a Shopify Usage Record using the **full** order count (there is **no** free-tier deduction).
+   - Increments `consumedAmount` by the order count. Cycle dates are **not** advanced.
+   - Inserts a `transactions` document.
+
+> **Known issues** (see the Billing Reference for detail): the orders query filters on a non-existent `orders.storeId` field (the model keys on `shop`), so the count is effectively zero; the `status: 'ACTIVE'` filter is uppercase while the schema enum is lowercase; and the inserted transactions document does not match the `transactions` schema and would fail validation.
 
 ---
 
 ## Scheduled Execution
 
-The billing cron is configured in FIK to run automatically:
+The billing cron is scheduled externally (FIK) and runs as a separate Kubernetes Job (not the web server) via the cron entrypoint:
 
-**Schedule:** `0 0 7,14,21,28 * *`
-
-This means: midnight on the 7th, 14th, 21st, and 28th of every month.
-
-The cron runs as a separate Kubernetes Job (not the web server):
 ```yaml
-# In FIK config (fik-fynd-extensions/environments/fynd/m2/projects/shopify-app.yaml)
+# In FIK config
 mode: cron
 cronJob:
-  schedule: "0 0 7,14,21,28 * *"
   jobType: billing_trigger
 ```
+
+Supported `CRON_JOB` / `jobType` values (`cron/index.js`):
+
+| Job type | Behavior |
+|----------|----------|
+| `billing_trigger` | Run `processWeeklyBilling()` |
+| `billing_trigger_last_day` | Run `processWeeklyBilling()` — end-of-month variant |
+| `test_cron_job` | No-op; logs success (smoke test) |
 
 ---
 
@@ -59,27 +64,26 @@ This runs the billing logic inline and returns when complete.
 MODE=cron CRON_JOB=billing_trigger node server.js
 ```
 
-Starts the cron process locally, processes all pending billing, and exits.
+Starts the cron process locally, runs the configured job, and exits.
 
 ---
 
 ## Monitoring a Cron Run
 
-1. Check logs during the run:
+1. Check logs during the run. Representative lines emitted by `controllers/billing.js` and `cron/index.js`:
    ```
-   [info] Starting billing cron: billing_trigger
-   [info] Processing subscription for shop: my-store.myshopify.com, plan: Growth
-   [info] Orders in period: 127, free tier: 50, billable: 77
-   [info] Created usage record: gid://shopify/AppUsageRecord/123
-   [info] Billing cron complete. Processed 12 stores.
+   [info] Usage record created successfully
+   [info] Updated subscription consumed amount
+   [info] Billing cron executed successfully for billing_trigger
+   [info] Cron job execution completed
    ```
 
-2. Check Sentry for errors (project: `shopify-backend`)
+2. Check Sentry for errors (project: `shopify-backend`).
 
-3. Verify in MongoDB:
+3. Verify in MongoDB — newly written transactions for the period:
    ```javascript
-   db.subscriptions.find({
-     billingCycleStart: { $gt: new Date('2026-03-21') }
+   db.transactions.find({
+     billingStart: { $gte: new Date('2026-06-10') }
    })
    ```
 
@@ -93,8 +97,8 @@ Starts the cron process locally, processes all pending billing, and exits.
    ```javascript
    db.subscriptions.findOne({ shop: "my-store.myshopify.com" })
    ```
-2. Verify `status === "active"` and `billingCycleEnd <= now`
-3. If cycle end is in the future, billing won't trigger yet
+2. The cron only selects `{ status: 'ACTIVE', plan: 'Growth' }`. There is no `billingCycleEnd` gate, so a subscription is processed every run unless a transaction already exists for the computed window.
+   > Note: the cron filters on the literal uppercase `status: 'ACTIVE'`, which does not match the schema's lowercase `active` enum value — see the Known issues above.
 
 ### Usage record creation failed
 
@@ -102,18 +106,20 @@ The Shopify Billing API can fail if:
 - Subscription was cancelled by merchant
 - Shop was uninstalled
 - Shopify API rate limit hit
+- The stored `subscriptionId` is not in Shopify's `activeSubscriptions` (the controller attempts a self-heal first)
 
-Check Sentry for `AppUsageRecordCreateFailed` errors.
+Check Sentry for usage-record errors.
 
 ### Orders not counted correctly
 
-Check the `orders` collection:
+The `orders` model keys on `shop` (and `orderId`), not `storeId`. To inspect orders for a shop and period:
 ```javascript
 db.orders.find({
   shop: "my-store.myshopify.com",
   createdAt: {
-    $gte: ISODate("2026-03-14"),
-    $lte: ISODate("2026-03-21")
+    $gte: ISODate("2026-06-10"),
+    $lt: ISODate("2026-06-17")
   }
 }).count()
 ```
+> The billing controller currently queries `orders.find({ storeId: store._id, ... })`. Because there is no `storeId` field on the `orders` documents, this returns no orders — a known bug. Use `shop` (as above) when verifying counts manually.

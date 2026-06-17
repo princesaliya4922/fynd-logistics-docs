@@ -7,7 +7,7 @@ sidebar_position: 4
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 All webhooks registered and consumed by the Fynd Shopify Ecosystem.
 
@@ -42,8 +42,10 @@ These webhooks are registered by `fyndIntegration.js` during app installation.
 ### Registration URL Pattern
 
 ```
-https://shopify-backend.extensions.fynd.com/webhook/store/{shop}/{topic}?app={appName}
+https://shopify-backend.extensions.fynd.com/webhook/store/{shop}/{topic}/{subtopic}?app={appName}
 ```
+
+The backend only mounts the 3-segment `:shop/:topic/:subtopic` route, so the `{subtopic}` segment is effectively required. The topic is reconstructed server-side as `{topic}/{subtopic}` (e.g. `orders` + `create` → `orders/create`).
 
 The `?app=` query param tells the HMAC middleware which API secret to use for verification.
 
@@ -68,7 +70,10 @@ Registered when `shopify-logistics-app` is installed — includes all Promise we
 | Topic | URL | Purpose |
 |-------|-----|---------|
 | `fulfillments/create` | `/webhook/store/{shop}/fulfillments/create?app=fynd-logistics` | Track new fulfillments |
-| `fulfillments/update` | `/webhook/store/{shop}/fulfillments/update?app=fynd-logistics` | Track fulfillment status changes |
+| `fulfillments/update` | `/webhook/store/{shop}/fulfillments/update?app=fynd-logistics` | Handle fulfillment cancellation |
+| `returns/request` *(GraphQL)* | `/webhook/store/{shop}/returns/request?app=fynd-logistics` | Handle customer return requests |
+| `returns/approve` *(GraphQL)* | `/webhook/store/{shop}/returns/approve?app=fynd-logistics` | Handle return approvals |
+| `returns/decline` *(GraphQL)* | `/webhook/store/{shop}/returns/decline?app=fynd-logistics` | Handle return declines |
 | `returns/cancel` *(GraphQL)* | `/webhook/store/{shop}/returns/cancel?app=fynd-logistics` | Handle return cancellations |
 
 ### GDPR Webhooks
@@ -90,7 +95,7 @@ Webhook API version is read from each app TOML and may differ by app/environment
 | `shopify-pincode-checker/shopify.app.toml` | `2024-07` |
 | `shopify-pincode-checker/shopify.app.pincode-serviceability-test.toml` | `2024-10` |
 | `shopify-logistics-app/shopify.app.fynd-logistics-uat.toml` | `2026-01` |
-| `shopify-logistics-app/shopify.app.fynd-logistics.toml` | `2025-04` |
+| `shopify-logistics-app/shopify.app.fynd-logistics-prod.toml` | `2026-01` |
 
 ---
 
@@ -115,8 +120,10 @@ if (!timingSafeEqual(Buffer.from(hmac), Buffer.from(receivedHmac))) {
 ```
 
 **App-specific secret selection:**
-- `?app=fynd-logistics` → `config.get('shopify_app.logistics_api_secret')`
-- `?app=fynd-promise` (or missing legacy value) → `config.get('shopify_app.promise_api_secret')`
+- `?app=fynd-logistics` → `config.get('shopify_app.logistics_api_secret')`. **Fail-closed:** if the secret is missing, the request is rejected with `500`.
+- `?app=fynd-promise` (or missing legacy value) → `config.get('shopify_app.promise_api_secret')`, but **only when `promise_hmac_enabled` is ON**.
+
+> **Promise HMAC caveat:** Promise webhook HMAC verification is gated by `promise_hmac_enabled` (env `PROMISE_SHOPIFY_HMAC_ENABLED`, **default `false`**). When the flag is OFF (the default), promise webhook HMAC is **bypassed entirely** — the request passes through without signature verification. This is intentional to avoid breaking live promise merchants whose webhooks were registered before the `?app=` param existed. Only when the flag is ON does the middleware load `promise_api_secret` and enforce HMAC fail-closed. The logistics path is always fail-closed.
 
 ---
 
@@ -157,15 +164,37 @@ POST https://shopify-backend.extensions.fynd.com/webhook/flp/shipment/update/{co
 }
 ```
 
-### Status Mapping (FLP → Shopify)
+### Status Mapping (FLP → internal → Shopify)
 
-| FLP Status | Shopify Fulfillment Status | MongoDB Shipment Status |
-|-----------|--------------------------|------------------------|
-| `bag_picked` | `in_transit` | `processing` |
-| `out_for_delivery` | `in_transit` | `processing` |
-| `delivered` | `success` | `fulfilled` |
-| `rto_initiated` | `failure` | `error` |
-| `cancelled` | `cancelled` | `cancelled` |
+FLP native status strings are first mapped to an **internal Fynd status** via `FLP_NATIVE_STATUS_MAP` (`controllers/utils/flpWebhookHelpers.js`). The internal status is then mapped to a **Shopify FulfillmentEvent** via `FYND_TO_SHOPIFY_FULFILLMENT_EVENT` (`controllers/utils/shopifyFulfillmentEventMap.js`).
+
+**FLP native status → internal status:**
+
+| FLP native status | Internal status |
+|-------------------|-----------------|
+| `order placed` | `dp_assigned` |
+| `delivered` | `delivery_done` |
+| `in transit` | `in_transit` |
+| `picked up` / `bag picked` | `bag_picked` |
+| `bag delivered` | `bag_delivered` |
+| `shipment created` | `placed` |
+| `confirmed` | `confirmed` |
+| `undelivered`, any `rto*` milestone | `rto` (internal failure) |
+
+> Failure milestones (`undelivered` and any `rto*` variant) collapse to the internal `rto` status. A human-readable `statusReason` (raw FLP status + carrier remarks) is propagated to the Shopify FAILURE event via `shipment_status.status_reason`.
+
+**Return shipments** (`shipment_type = return`) are remapped through `mapReturnStatus`: `dp_assigned` → `return_dp_assigned`, `delivery_done` → `return_bag_delivered`, and any other status gets a `return_` prefix (e.g. `in_transit` → `return_in_transit`).
+
+**Internal status → Shopify FulfillmentEvent:**
+
+| Internal status | Shopify FulfillmentEvent |
+|-----------------|--------------------------|
+| `dp_assigned` | `CONFIRMED` |
+| `in_transit` | `IN_TRANSIT` |
+| `delivery_done` | `DELIVERED` |
+| `rto` | `FAILURE` |
+
+> Only the four internal statuses above currently map to a Shopify FulfillmentEvent. Other internal statuses (e.g. `bag_picked`, `bag_delivered`, `placed`, `confirmed`) are tracked on the shipment record but do not emit a Shopify timeline event. Forward-lifecycle events use a strictly increasing rank so status regressions on the same fulfillment are rejected; off-axis events (`DELAYED`, `ATTEMPTED_DELIVERY`, `FAILURE`) have rank 0 and never block forward progress.
 
 ---
 
@@ -199,6 +228,6 @@ Receives extension enable/disable status updates from Fynd's extension managemen
 
 **FLP webhooks:**
 - FLP retries on non-200 responses
-- Idempotency: shipment updates are deduplicated by `fulfillment_order_id`
+- Tenant resolution: the `:companyId` path param is matched against `logistics` docs by `companyDetails.companyId` **and** `logisticsEngine: 'flp'` to find eligible shops. The shipment/return is then resolved within those shops by `fynd_shipment_id` (and `fynd_order_id` / `fynd_return_shipment_id` as applicable) — **not** by `fulfillment_order_id`.
 
 **Best practice:** Webhook handlers should be idempotent — processing the same event twice should not cause duplicate side effects.

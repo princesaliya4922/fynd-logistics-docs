@@ -7,11 +7,11 @@ sidebar_position: 1
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ## What Is the Fynd Shopify Ecosystem?
 
-The Fynd Shopify Ecosystem is a collection of **two Shopify merchant apps** and a **shared backend** that allow Indian e-commerce merchants to plug Fynd's logistics network and delivery-promise engine directly into their Shopify stores.
+The Fynd Shopify Ecosystem is a collection of **two Shopify merchant apps** and a **shared backend** that allow Indian e-commerce merchants to plug Fynd's logistics network and delivery-promise engine directly into their Shopify stores. The source code now lives in the `shopify-apps` monorepo under `services/`.
 
 Fynd (by Reliance Retail) operates one of India's largest omnichannel commerce platforms. These apps are the Shopify gateway into that platform.
 
@@ -19,7 +19,7 @@ Fynd (by Reliance Retail) operates one of India's largest omnichannel commerce p
 
 ## The Two Apps
 
-### Fynd Promise (`shopify-pincode-checker`)
+### Fynd Promise (`services/shopify-pincode-checker`)
 
 **What it does:**
 Shows customers a delivery date promise ("Delivery by Mon–Wed") before they buy — both on the product page and at checkout.
@@ -39,7 +39,7 @@ Any Indian Shopify merchant who wants to reduce cart abandonment by showing tran
 
 ---
 
-### Fynd Logistics (`shopify-logistics-app`)
+### Fynd Logistics (`services/shopify-logistics-app`)
 
 **What it does:**
 Connects Shopify orders to Fynd's fulfillment network so shipments are automatically handed off to Fynd delivery partners.
@@ -61,16 +61,17 @@ Indian Shopify merchants who want Fynd to handle pick-up, shipping, and delivery
 
 ---
 
-## The Shared Backend (`shopify-backend`)
+## The Shared Backend (`services/shopify-backend`)
 
 A single Node.js/Express server that handles:
-- OAuth installation flows for both apps
-- Session management (SQLite for Promise, Redis for Logistics)
+- Backend-facing APIs, webhook processing, Fynd integration, admin tooling, and cron execution
+- Shopify session-token verification for browser/API requests from both apps
 - All API calls between the Shopify apps and Fynd's platform
 - Shopify webhook processing (orders, inventory, fulfillments, returns)
 - Fynd platform webhook processing (shipment status updates)
-- Usage-based billing via Shopify's billing API
 - Merchant configuration storage in MongoDB
+
+The embedded app mini-servers still own Shopify OAuth and session persistence: Promise uses SQLite, while Logistics uses Redis.
 
 ---
 
@@ -81,4 +82,4 @@ A single Node.js/Express server that handles:
 | **India only** | Both apps check the Shopify store's `country_code`. Only `IN` stores can use the apps. |
 | **Shopify Embedded** | Both apps run embedded inside the Shopify Admin (`embedded = true`). |
 | **Shared infra** | Both apps share the same backend deployment; they are distinguished by API key/secret. |
-| **Usage-based billing** | Billing is tied to actual order/fulfillment counts via Shopify Usage Records. |
+| **Usage-based billing** | Billing data is tracked in MongoDB and Shopify billing integration code exists, but the current billing cron has known implementation drift documented in the billing reference. |

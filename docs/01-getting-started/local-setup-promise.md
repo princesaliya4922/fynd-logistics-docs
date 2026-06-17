@@ -7,19 +7,21 @@ sidebar_position: 3
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-`shopify-pincode-checker` is the Shopify app for **Fynd Promise**. It's a monorepo containing a Node.js/Express mini-server, a React frontend, and two Shopify extensions.
+Fynd Promise lives at `services/shopify-pincode-checker` inside the **`shopify-apps` monorepo**. The service itself contains a Node.js/Express mini-server, a React frontend, and two Shopify extensions.
 
-> **Before you start:** Make sure `shopify-backend` is running. The frontend app proxies most API calls to it.
+> **Before you start:** Make sure the central Fynd backend (`BACKEND_URL`) is running. The frontend app proxies most API calls to it.
 
 ---
 
 ## 1. Clone the Repository
 
+The app is no longer a standalone repo — clone the single `shopify-apps` monorepo and `cd` into the service:
+
 ```bash
-git clone <repo-url>/shopify-pincode-checker.git
-cd shopify-pincode-checker
+git clone <repo-url>/shopify-apps.git
+cd shopify-apps/services/shopify-pincode-checker
 ```
 
 ---
@@ -37,32 +39,47 @@ npm install
 
 ## 3. Configure Environment Variables
 
-```bash
-cp web/.env.example web/.env
-```
-
-Edit `web/.env`:
+There is **no `web/.env.example`** in this repo — create `web/.env` manually:
 
 ```bash
-# Shopify app credentials (from Shopify Partners dashboard)
+# Shopify app credentials (consumed by the Shopify SDK, not by convict)
 SHOPIFY_API_KEY=<your-promise-app-api-key>
 SHOPIFY_API_SECRET=<your-promise-app-api-secret>
 
-# Your ngrok URL (must match HOST in shopify-backend)
+# Your ngrok / app base URL
 HOST=https://abc123.ngrok-free.app
 
-# shopify-backend URL
+# Central Fynd backend URL (proxy target)
 BACKEND_URL=https://abc123.ngrok-free.app
 
 # API key for backend authentication
-BASE_API_KEY=<same as BASE_API_KEY in shopify-backend>
+BASE_API_KEY=<same key the backend expects>
 
-# Ports
-BACKEND_PORT=3000
-FRONTEND_PORT=3001
+# Sentry DSN (optional; read via convict)
+SENTRY_DSN=<your-sentry-dsn>
+
+# Port the Express server binds to.
+# PORT is the canonical convict var; index.js also reads BACKEND_PORT
+# and falls back to PORT, then 3000.
+PORT=3000
 
 NODE_ENV=development
 ```
+
+**Env var notes** (`web/config.js` uses [convict]):
+
+| Var | Read by | Notes |
+|-----|---------|-------|
+| `NODE_ENV` | convict | App environment |
+| `PORT` | convict | Canonical port var |
+| `BACKEND_PORT` | `index.js` directly | Takes precedence over `PORT` if set; falls back to `PORT`, then `3000` |
+| `HOST` | convict | App base URL |
+| `BACKEND_URL` | convict | Central Fynd backend (proxy target) |
+| `SENTRY_DSN` | convict | Sentry error reporting |
+| `BASE_API_KEY` | convict | Backend API key (`x-api-key`) |
+| `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET` | Shopify SDK | Not part of the convict schema |
+
+> `FRONTEND_PORT` is **not** referenced by the backend config; it is not needed for the Express server.
 
 ---
 
@@ -108,7 +125,7 @@ npm install
 
 **fynd-promise-pdp** (Theme Extension):
 - No additional setup needed
-- Activate via Shopify Admin → Online Store → Themes → Customize → App blocks
+- Activate via Shopify Admin → Online Store → Themes → Customize → App blocks (the block is named **"Fynd Pincode Service"**)
 
 ---
 
@@ -130,20 +147,24 @@ shopify app deploy
 ## Understanding the App Structure
 
 ```
-shopify-pincode-checker/
+services/shopify-pincode-checker/
 ├── web/                    # Node.js Express server + React frontend
-│   ├── index.js           # Express server (thin proxy to shopify-backend)
+│   ├── index.js           # Express server (thin proxy to BACKEND_URL)
 │   ├── shopify.js         # Shopify API initialization, SQLite sessions
 │   ├── config.js          # Environment config (convict)
 │   ├── fyndIntegration.js # Registers store + creates webhooks on install
 │   ├── billing.js         # Shopify billing plan definitions
+│   ├── sentry.js          # Sentry initialization
+│   ├── logger.js          # Winston logger
+│   ├── privacyPolicy.js   # Static privacy-policy HTML served at /privacy-policy
+│   ├── database.sqlite    # SQLite session store (auto-created)
 │   └── frontend/          # React SPA (Vite + Polaris)
 │       ├── App.jsx
-│       ├── pages/         # index, settings, pricing
+│       ├── pages/         # index, settings, pricing, pagename, ExitIframe, NotFound
 │       └── components/    # RegionHandle, UserHandle, setting/*, billing/*
 ├── extensions/
 │   ├── fynd-promise-checkout/  # Checkout UI extension
-│   └── fynd-promise-pdp/       # Theme extension (PDP widget)
+│   └── fynd-promise-pdp/       # Theme extension (PDP widget / "Fynd Pincode Service")
 └── shopify.app.toml            # App config
 ```
 
@@ -162,7 +183,9 @@ This app uses **SQLite** for session storage (not Redis). The database file is c
 | `npm run dev` | Start Shopify CLI dev mode |
 | `npm run build` | Build the app |
 | `npm run deploy` | Deploy app + extensions to Shopify |
+| `npm run dev:deploy` | Run `localUtils/deploy.sh` (scripted deploy helper) |
 | `npm test` | Run Jest tests |
+| `npm run test:coverage` | Run Jest with coverage |
 | `npm run ngrok` | Start ngrok tunnel manually |
 
 ---
@@ -173,6 +196,6 @@ This app uses **SQLite** for session storage (not Redis). The database file is c
 |---------|---------|
 | "Store not in India" error | Make sure your dev store country is set to India in Shopify Admin |
 | Webhook not received | ngrok must be running; check `HOST` env var |
-| Subscription check fails | `BACKEND_URL` must point to running `shopify-backend` |
+| Subscription check fails | `BACKEND_URL` must point to the running central Fynd backend |
 | Blank page after install | Check browser console for `SHOPIFY_API_KEY` mismatch |
 | SQLite error | Delete `web/database.sqlite` and reinstall the app |

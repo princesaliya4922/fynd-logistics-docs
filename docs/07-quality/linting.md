@@ -7,13 +7,13 @@ sidebar_position: 3
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
 ## ESLint Configuration
 
-`shopify-backend` uses **ESLint 9.15.0** with the flat config format.
+`services/shopify-backend` uses ESLint with the flat config format (`eslint.config.mjs`).
 
 ```bash
 # Run linting
@@ -23,13 +23,13 @@ npm run lint
 npm run lint:fix
 ```
 
-The ESLint config file is `eslint.config.js` (or `.eslintrc.js`) at the repo root.
+Run these commands from `services/shopify-backend`.
 
 ---
 
 ## Frontend Apps
 
-Both frontend apps (React) use ESLint configured by Vite's default React preset.
+The current root package scripts for `services/shopify-pincode-checker` and `services/shopify-logistics-app` do not expose `npm run lint`; they expose Shopify CLI commands plus Jest tests. Add lint scripts before documenting lint as CI-enforced for those services.
 
 The Vite scaffolding includes:
 - `eslint-plugin-react`
@@ -40,13 +40,7 @@ The Vite scaffolding includes:
 
 ## CI Enforcement
 
-Linting runs as the first step in the CI pipeline. A lint failure blocks the build.
-
-```yaml
-# azure-pipelines.yml (simplified)
-- script: npm run lint
-  displayName: 'Lint check'
-```
+The monorepo pipeline delegates build behavior to the shared `kube-infrastructure` template. Do not assume a lint step is enforced for every service unless the template or service config explicitly runs it.
 
 ---
 

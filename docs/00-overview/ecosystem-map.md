@@ -7,7 +7,7 @@ sidebar_position: 2
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 This page maps the full Fynd Shopify system: runtime components, deployment control plane, observability, and analytics pipeline.
 
@@ -30,7 +30,7 @@ flowchart LR
     subgraph Apps[Fynd Shopify Apps]
         Promise[shopify-pincode-checker]
         Logistics[shopify-logistics-app]
-        Backend[logistics-backend]
+        Backend[shopify-backend]
     end
 
     subgraph Ext[Shopify Extensions]
@@ -157,12 +157,12 @@ graph LR
 
 ## Repository to Runtime Ownership
 
-| Repository | Deploys | Runtime Responsibility |
-|-----------|---------|------------------------|
-| `shopify-pincode-checker` | Promise embedded app + extension assets | Promise onboarding and customer-facing promise widgets |
-| `shopify-logistics-app` | Logistics embedded app + admin extension assets | Logistics onboarding and manual fulfillment/returns actions |
-| `shopify-backend` | Shared API + cron | Webhooks, fulfillment orchestration, billing, serviceability APIs |
-| `fik-fynd-extensions` | Kubernetes manifests + env overlays | Environment-specific deployment and secret wiring |
+| Source | Deploys | Runtime Responsibility |
+|--------|---------|------------------------|
+| `shopify-apps/services/shopify-pincode-checker` | Promise embedded app + extension assets | Promise onboarding and customer-facing promise widgets |
+| `shopify-apps/services/shopify-logistics-app` | Logistics embedded app + admin extension assets | Logistics onboarding and manual fulfillment/returns actions |
+| `shopify-apps/services/shopify-backend` | Shared API + cron entry point | Webhooks, fulfillment orchestration, serviceability APIs, admin dashboard |
+| Fynd infrastructure config | Kubernetes manifests + env overlays | Environment-specific deployment and secret wiring |
 | `transformations` | Zenith jobs | MongoDB -> BigQuery transformation and sync |
 
 ---
@@ -194,7 +194,7 @@ sequenceDiagram
     participant M as MongoDB
     participant S as Serviceability API
 
-    C->>Ext: Enter pincode
+    C->>Ext: Enter pincode or shipping zip becomes available
     Ext->>B: POST /location/service
     B->>M: Read store config + mappings
     B->>S: Check serviceability
@@ -232,8 +232,8 @@ sequenceDiagram
     participant Backend as backend
     participant Shopify as Shopify Platform
 
-    Browser->>App: /api/* with session token (JWT)
-    App->>App: validateAuthenticatedSession
+    Browser->>App: /api/* with App Bridge session token
+    App->>App: validateAuthenticatedSession / token helper
     App->>Backend: Forward request + x-api-key
     Backend->>Backend: Verify session JWT + route auth
     Shopify->>Backend: webhook + X-Shopify-Hmac-Sha256

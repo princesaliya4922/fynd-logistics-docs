@@ -7,9 +7,11 @@ sidebar_position: 2
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 Deep-dive into the `shopify-backend` service — the central engine powering both Fynd Shopify apps.
+
+> **Dependencies:** The backend has **no** `@shopify/*` dependency. It uses `fdk-extension-javascript`, `@gofynd/fdk-client-javascript`, and custom HMAC middleware for Shopify integration. Logging is via `fit/tracing` (not Winston).
 
 ---
 
@@ -23,9 +25,11 @@ Deep-dive into the `shopify-backend` service — the central engine powering bot
                    │
 ┌──────────────────▼──────────────────────────────┐
 │              Middleware Layer                    │
-│  shopifySessionAuth  shopifyHmacAuth  basicAuth  │
-│  fulfillmentLimitCheck  logisticsEnabled         │
-│  metricsMiddleware   securityMiddleware          │
+│  Global: metricsMiddleware  CORS                 │
+│          securityHeaders    validateHeaders      │
+│  Route-scoped: shopifySessionAuth shopifyHmacAuth│
+│          basicAuth  logisticsEnabled             │
+│          fulfillmentLimitCheck  adminAuth        │
 └──────────────────┬──────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────┐
@@ -67,7 +71,7 @@ Runs first on `npm start` or `npm run dev`. Responsibilities:
 3. Initialize MongoDB connection (`Fit.connections.mongo`)
 4. Initialize Redis connection (`Fit.connections.redis`)
 5. Set up global error handlers for uncaught exceptions / unhandled rejections
-6. Choose mode: `index.js` (web server) or `cron/index.js` (cron job) based on `MODE` env var
+6. Choose mode: `index.js` (web server) or `cron/index.js` (cron job) based on `config.mode === 'cron'`
 7. Handle `SIGTERM` for graceful shutdown
 
 ### `index.js` — Application Setup
@@ -84,18 +88,20 @@ Builds the Express application:
 
 ## Middleware Execution Order
 
-Every authenticated request passes through this stack:
+Global middleware is registered in `index.js` (lines ~68-85) in this order:
 
 ```
 Request
   → metricsMiddleware (record request start)
-  → CORS check (corsUtils.js — regex-based domain validation)
-  → securityMiddleware (set security headers, validate required headers)
-  → body-parser (JSON + raw body capture)
-  → Route-specific middleware:
+  → CORS check (async corsService.getCorsOptions() — dynamic allowed origins)
+  → securityHeaders (securityMiddleware — set security headers)
+  → validateHeaders (securityMiddleware — validate required headers)
+  → body-parser (JSON + raw body capture, configured on the FIT server)
+  → Route-specific middleware (route-scoped, NOT global):
       For /logistics/* → shopifySessionAuth (JWT verify) → logisticsEnabled → fulfillmentLimitCheck
-      For /webhook/* → shopifyHmacAuth (HMAC verify)
-      For /logistics/admin/* → basicAuth
+      For /webhook/store/* → shopifyHmacAuth (HMAC verify)
+      For /logistics/admin/api/* → requireAdminSession → enforceAdminOrigin → enforceCsrfToken
+      For /map/mapInventories and /webhook/extension/status → basicAuth
   → Controller function
   → asyncHandler error propagation
   → Global error handler (errorHandler.js)
@@ -103,24 +109,31 @@ Request
 Response
 ```
 
+> **Note:** `securityMiddleware` exports two functions, `securityHeaders` and `validateHeaders`, registered as separate global middlewares. `basicAuth`, `fulfillmentLimitCheck`, and `logisticsEnabled` are route-scoped, not global.
+
 ---
 
 ## Route Registration Order
 
-Routes are registered in `index.js` in this order:
+Routes are registered in `index.js` (lines ~88-129) in this order:
 
 ```
-1. FDK extension handler (root)          — Fynd platform webhook registry
-2. /api/v1/fynd/webhooks                 — Fynd platform webhooks
-3. /api-docs                             — Swagger UI
-4. /map/*                                — Sync routes
-5. /location/*                           — Serviceability routes
-6. /config/*                             — Configuration routes
-7. /logistics/otp/*                      — OTP routes (no session auth)
-8. /logistics/*                          — Main logistics routes (session auth)
-9. /webhook/flp/shipment/update/:companyId — FLP platform webhooks
-10. /webhook/*                           — Shopify webhooks (HMAC auth)
+1. /                                     — FDK extension handler (Fynd platform webhook registry)
+2. /webhook/*                            — Shopify webhooks (HMAC auth on /store/*)
+3. /api/v1/fynd/webhooks                 — Fynd platform webhooks (inline POST handler)
+4. /api-docs                             — Swagger UI
+5. /map/*                                — Sync routes
+6. /location/*                           — Serviceability routes
+7. /config/*                             — Configuration routes
+8. /logistics/admin/assets               — Static admin dashboard assets
+9. /logistics/*                          — Main logistics routes (session auth + admin)
+10. /webhook/flp/*                       — FLP platform webhooks
 ```
+
+> **Note:** `/webhook` is mounted before `/webhook/flp`. There is no `/logistics/otp` mount — `routes/otpRoutes.js` is dead/unused. The real OTP and account-linking flows live under `/logistics/email/*` and `/logistics/link*` in `routes/logisticsRoutes.js`:
+>
+> - `POST /logistics/email/send-otp`, `POST /logistics/email/verify-otp`, `GET /logistics/email/verification-status`, `POST /logistics/email/reset-verification`
+> - `POST /logistics/link`, `POST /logistics/link/verify`
 
 ---
 
@@ -128,10 +141,10 @@ Routes are registered in `index.js` in this order:
 
 The backend manages sessions for **two separate Shopify apps**:
 
-| App | Session Storage | Token Field | JWT Secret Config Key |
+| App | Session Storage | Store Token Field | JWT Secret Config Key |
 |-----|----------------|-------------|----------------------|
-| Fynd Promise | SQLite (in the Promise app server) | `shopifyToken` | `shopify_app.promise_api_secret` |
-| Fynd Logistics | Redis (in the Logistics app server) | `shopifyToken` (Logistics) | `shopify_app.logistics_api_secret` |
+| Fynd Promise | SQLite (in the Promise app server) | `promise_shopifyToken` | `shopify_app.promise_api_secret` |
+| Fynd Logistics | Redis (in the Logistics app server) | `shopifyToken` | `shopify_app.logistics_api_secret` |
 
 When a request comes to `shopify-backend`, the `shopifySessionAuth` middleware:
 1. Extracts the `Authorization: Bearer <jwt>` header
@@ -141,7 +154,7 @@ When a request comes to `shopify-backend`, the `shopifySessionAuth` middleware:
 5. Looks up the store in MongoDB using the shop domain
 6. Attaches `req.shop`, `req.store`, `req.shopifyToken` for downstream use
 
-The `createSessionAuth(appType)` factory creates app-specific middleware instances.
+The `createSessionAuth({ apiSecretKey, apiKeyConfig, tokenField, appLabel })` factory (in `middlewares/shopifySessionAuth.js`) takes a config object and creates app-specific middleware instances. It exports `shopifyLogisticsSessionAuth`, `shopifyPromiseSessionAuth`, and `shopifySessionAuth` (an alias for the logistics variant).
 
 ---
 
@@ -168,56 +181,68 @@ Fulfillment jobs are added to an in-memory `FakeQueue` (worker thread pool) and 
 
 ## Fulfillment Engines
 
-The backend supports two fulfillment engines, stored per-shipment in `fulfillment_engine`:
+The backend supports two fulfillment engines. The engine is configured **per store** via the `logisticsEngine` field on the `logistics` document (`model/logistics.js`, enum `["flp","oms"]`). The schema-level default is `"flp"`, but the field getter returns `"oms"` when the value is unset, so unset stores effectively resolve to `oms`.
 
-| Engine | Description | Used When |
-|--------|-------------|----------|
-| `flp` | FLP Platform — Fynd's primary logistics platform | Default for most merchants |
-| `oms` | Fynd OMS — order management system | Alternative for certain merchants/setups |
+| Engine | Description |
+|--------|-------------|
+| `flp` | FLP Platform — Fynd's logistics platform |
+| `oms` | Fynd OMS — order management system |
 
-The engine is determined during shipment creation and stored in the `shipments` MongoDB collection.
+When a shipment is created, the store's engine is snapshotted into the shipment's `fulfillment_engine` field (`model/shipments.js`, enum `['oms','flp']`, `default: undefined`). This field is only a snapshot of the store setting at creation time.
+
+The admin dashboard toggle for this setting is `logistics-engine`.
 
 ---
 
 ## Billing Cron Job
 
-When `MODE=cron` and `CRON_JOB=billing_trigger`, the server runs `cron/index.js` instead of the web server:
+When `config.mode === 'cron'`, the server runs `cron/index.js` instead of the web server. The job dispatched is keyed off `config.get('cron_job')` (env `CRON_JOB`). Recognized cron job types (`cron/index.js`) are:
 
-1. Fetches all active subscriptions from MongoDB
-2. For each store with a billing cycle due:
-   - Counts fulfilled orders in the billing period
-   - Creates Shopify Usage Records for chargeable orders
-   - Updates subscription billing cycle dates
-3. Exits after completion
+- `billing_trigger`
+- `billing_trigger_last_day`
+- `test_cron_job`
 
-**Schedule (configured in FIK):** 7th, 14th, 21st, 28th of each month at midnight.
+The billing logic lives in `controllers/billing.js`. It queries `subscriptions.find({ status: 'ACTIVE', plan: 'Growth' })`, and for each matching subscription counts orders in the cycle window, updates `consumedAmount` on the subscription, and creates a `transactions` document.
+
+> **Known issue:** The cron query filters on `status: 'ACTIVE'` (uppercase), but the `subscriptions` model enum is lowercase (`active`, `cancelled`, `expired`, `uninstalled`), so the filter matches no documents. The order count uses `orders.find({ storeId, createdAt })`, but the `orders` model has no `storeId` field. The cron does **not** apply a free-tier deduction, does **not** advance the billing-cycle date, and does **not** read or set `isBilled`; it only updates `consumedAmount` and writes a transaction record.
+
+**Schedule:** The cron schedule itself is external (configured in FIK), not in this repo.
 
 ---
 
 ## Error Handling
 
-All controller functions are wrapped with `asyncHandler(fn)` from `utils/errorHandler.js`. This catches any thrown errors and passes them to Express's error handling middleware.
+Many controller functions are wrapped with `asyncHandler(fn)` from `utils/errorHandler.js`, which catches thrown errors and passes them to Express's error handling middleware.
 
-**Standard error response:**
+**Error response shapes (common patterns, not a single enforced envelope):**
+
+Error responses are inconsistent across the codebase — there is no central enforced envelope:
+
 ```json
-{
-  "success": false,
-  "message": "Human-readable description",
-  "errorCode": "SPECIFIC_ERROR_CODE",
-  "errors": "optional detail",
-  "requestId": "from x-request-id header"
-}
+// webhook / HMAC middleware
+{ "status": false, "message": "..." }
+
+// 404 handler (index.js)
+{ "status": "error", "message": "...", "path": "..." }
+
+// many controllers
+{ "success": false, "message": "...", "errorCode": "..." }
 ```
 
-**Error routing:**
-- 4xx errors → logged as `warn`, NOT sent to Sentry
-- 5xx errors → logged as `error`, sent to Sentry
+A `requestId` is rarely present. Logging is handled via `fit/tracing`. 4xx/5xx routing to `warn`/`error`/Sentry follows common patterns rather than a strictly enforced rule.
 
 ---
 
 ## Admin Dashboard
 
-A built-in admin dashboard is available at `/logistics/admin` (protected by basic auth `BOLTIC_USERNAME`/`BOLTIC_PASSWORD`).
+A built-in admin dashboard is available at `/logistics/admin`. It is **no longer Basic Auth** — it uses an OTP + session + CSRF + origin-check system:
+
+- Middleware: `middlewares/adminAuth.js` — `requireAdminSession`, `enforceAdminOrigin`, `enforceCsrfToken`, `auditAdminAction`
+- Controllers: `controllers/adminAuthController.js`, `controllers/services/adminAuthService.js`
+- Auth routes: `POST /logistics/admin/api/auth/request-otp`, `POST /logistics/admin/api/auth/verify-otp`, `POST /logistics/admin/api/auth/logout`, `GET /logistics/admin/api/auth/session`
+- Config keys (`admin_auth.*`): `ADMIN_AUTH_STRICT`, `ADMIN_ALLOWED_EMAILS`, `ADMIN_OTP_TTL_SECONDS`, `ADMIN_OTP_MAX_ATTEMPTS_PER_CHALLENGE`, `ADMIN_SESSION_TTL_SECONDS`
+
+`BOLTIC_USERNAME`/`BOLTIC_PASSWORD` Basic Auth is now used **only** for `/map/mapInventories` and `/webhook/extension/status`.
 
 Capabilities:
 - View aggregate stats (stores, orders, fulfillments)

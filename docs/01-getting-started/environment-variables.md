@@ -7,101 +7,117 @@ sidebar_position: 5
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-Complete reference for all environment variables across all three projects.
-
----
-
-## shopify-backend
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `NODE_ENV` | Yes | `development` | `development` or `production`. Controls billing test mode, logging level. |
-| `PORT` | No | `8000` | Port the Express server listens on. |
-| `MODE` | No | `""` | Set to `cron` to run cron jobs instead of the web server. |
-| `MONGO_SHOPIFY_BACKEND_READ_WRITE` | Yes | — | Primary MongoDB connection string (read + write). |
-| `MONGO_SHOPIFY_BACKEND_READ_ONLY` | Yes | — | Read-only MongoDB replica connection string. Can be same as read/write locally. |
-| `REDIS_SHOPIFY_BACKEND_READ_WRITE` | Yes | — | Primary Redis connection string (read + write). |
-| `REDIS_SHOPIFY_BACKEND_READ_ONLY` | Yes | — | Read-only Redis connection string. |
-| `LOGISTICS_SHOPIFY_API_KEY` | Yes | — | Shopify API key for the Fynd Logistics app. Used to verify session tokens. |
-| `LOGISTICS_SHOPIFY_API_SECRET_KEY` | Yes | — | Shopify API secret for the Fynd Logistics app. Used for JWT/HMAC verification. |
-| `PROMISE_SHOPIFY_API_KEY` | Yes | — | Shopify API key for the Fynd Promise app. |
-| `PROMISE_SHOPIFY_API_SECRET_KEY` | Yes | — | Shopify API secret for the Fynd Promise app. |
-| `EXTENSION_BASE_URL` | Yes | — | Base URL of the Fynd platform extension services. |
-| `EXTENSION_API_KEY` | Yes | — | API key for authenticating with Fynd extension services. |
-| `EXTENSION_API_SECRET` | Yes | — | API secret for Fynd extension services. |
-| `LOGISTICS_API_BASE_URL_CENTRAL_SIT` | Yes | — | Fynd Central integration base URL for user/org/account flows. |
-| `LOGISTICS_API_BASE_URL_UAT` | Yes | — | Fynd UAT API base URL for auth/extension install/billing flows. |
-| `LOGISTICS_API_BASE_URL_CONSOLE_UAT` | Yes | — | Fynd Console UAT base URL for product account lookups. |
-| `FLP_PLATFORM_API_BASE_URL` | Yes | — | FLP Platform API base URL (shipment creation). |
-| `LOGISTICS_EXTENSION_API_BASE_URL` | Yes | — | Fynd Logistics Extension API base URL (delivery partners). |
-| `LOGISTICS_EXTENSION_API_PATH` | No | — | Path prefix for logistics extension API. |
-| `LOGISTICS_EXTENSION_AUTH_TOKEN` | Yes | — | Auth token for logistics extension API. |
-| `FYND_DP_EXTENSION_ID` | Yes | — | Fynd delivery partner extension ID. |
-| `FYND_PLATFORM_DOMAIN` | Yes | — | Fynd platform domain suffix (e.g., `fynd.com`). |
-| `COMPANY_ID` | Yes | — | Default Fynd company ID used for shared operations. |
-| `API_KEY` | Yes | — | General Fynd platform API key. |
-| `APPLICATION_ID` | Yes | — | Fynd application ID. |
-| `APPLICATION_TOKEN` | Yes | — | Fynd application token. |
-| `BOLTIC_USERNAME` | Yes | — | Username for basic auth on internal/admin API endpoints. |
-| `BOLTIC_PASSWORD` | Yes | — | Password for basic auth on internal/admin API endpoints. |
-| `ADMIN_PANEL_PASSWORD` | Yes | — | Password for admin dashboard UI unlock (`/logistics/admin`). |
-| `GOOGLE_MAPS_API_KEY` | No | — | Google Maps API key for distance/location calculations. |
-| `SENTRY_DSN` | No | — | Sentry DSN for error tracking. Leave blank to disable. |
-| `SENTRY_ENVIRONMENT` | No | `development` | Sentry environment tag. |
-| `FULFILLMENT_PROCESSING_MODE` | No | `sync` | `sync` or `memory-queue`. Controls how fulfillment jobs are processed. |
-| `FULFILLMENT_SYNC_TIMEOUT` | No | `60000` | Timeout (ms) for synchronous fulfillment processing. |
-| `FULFILLMENT_SYNC_MAX_RETRIES` | No | `3` | Maximum retry attempts for failed fulfillments. |
-| `FULFILLMENT_SYNC_RETRY_DELAY` | No | `1000` | Initial retry delay (ms), doubles on each retry (exponential backoff). |
-| `ALLOWED_DOMAINS_REGEX` | No | — | Regex pattern for CORS allowed origins. |
-| `FRAME_ANCESTORS` | No | — | CSP `frame-ancestors` directive value. |
-| `CRON_JOB` | No | — | Cron job type when `MODE=cron`. Values: `billing_trigger`, `test_cron_job`. |
-| `TRACING_ENABLED` | No | `false` | Enable distributed tracing. |
-| `LOG_LEVEL` | No | `info` | Logging level (`debug`, `info`, `warn`, `error`). |
-| `NEW_RELIC_ENABLED` | No | `false` | Enable New Relic APM monitoring. |
-| `NEW_RELIC_APP_NAME` | No | — | App name in New Relic. |
-| `NEW_RELIC_LICENSE_KEY` | No | — | New Relic license key. |
-| `BYPASS_SSL_VALIDATION` | No | `false` | Set to `true` to bypass SSL cert checks (dev only with VPN). |
+Reference for the main environment variables across the three services. The authoritative schema is still each service's `config.js`.
 
 ---
 
-## shopify-pincode-checker (web server)
+## `services/shopify-backend`
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SHOPIFY_API_KEY` | Yes | — | Shopify API key for the Fynd Promise app. Used to init Shopify client. |
-| `SHOPIFY_API_SECRET` | Yes | — | Shopify API secret. Used for OAuth and session verification. |
-| `HOST` | Yes | — | Public HTTPS URL of this app (ngrok in dev, domain in prod). |
-| `BACKEND_URL` | Yes | — | URL of the `shopify-backend` service. All merchant data APIs proxy here. |
-| `BASE_API_KEY` | Yes | — | `x-api-key` header value sent to `shopify-backend`. |
-| `NODE_ENV` | No | `development` | `development` or `production`. |
-| `BACKEND_PORT` | No | `3000` | Port for the Express server. |
-| `FRONTEND_PORT` | No | `3001` | Port for the Vite dev server. |
-| `SENTRY_DSN` | No | — | Sentry DSN for the Promise app. |
+| `PORT` | No | `8000` | HTTP port. |
+| `MODE` | No | `""` | Set to `cron` to run `cron/index.js` instead of the HTTP app. |
+| `CRON_JOB` | Cron only | `""` | Recognized values include `billing_trigger`, `billing_trigger_last_day`, `test_cron_job`. |
+| `MONGO_SHOPIFY_BACKEND_READ_WRITE` | Yes | `""` | MongoDB read/write URI. |
+| `MONGO_SHOPIFY_BACKEND_READ_ONLY` | Yes | `""` | MongoDB read URI. Can match read/write locally. |
+| `REDIS_SHOPIFY_BACKEND_READ_WRITE` | Yes | `""` | Redis read/write URI. Required during backend startup. |
+| `REDIS_SHOPIFY_BACKEND_READ_ONLY` | Yes | `""` | Redis read URI. Can match read/write locally. |
+| `LOGISTICS_SHOPIFY_API_KEY` | Yes | `""` | Shopify API key for Fynd Logistics session-token verification. |
+| `SHOPIFY_LOGISTICS_LOGISTICS_SHOPIFY_API_SECRET_KEY` | Yes | `""` | Shopify API secret for Logistics JWT/HMAC verification. |
+| `PROMISE_SHOPIFY_API_KEY` | Yes | `""` | Shopify API key for Fynd Promise session-token verification. |
+| `SHOPIFY_LOGISTICS_PROMISE_SHOPIFY_API_SECRET_KEY` | Yes | `""` | Shopify API secret for Promise HMAC verification. |
+| `PROMISE_SHOPIFY_HMAC_ENABLED` | No | `false` | Enables strict Promise webhook HMAC verification after the Promise secret is configured. |
+| `SHOPIFY_MAX_CONCURRENCY` | No | `5` | Bounds concurrent Shopify Admin API fan-out. |
+| `EXTENSION_BASE_URL` | Yes | `""` | Fynd extension/base API URL. |
+| `EXTENSION_API_KEY` | Yes | `""` | Fynd extension API key. |
+| `EXTENSION_API_SECRET` | Yes | `""` | Fynd extension API secret. |
+| `FYND_DP_EXTENSION_ID` | Depends | `""` | Fynd delivery partner extension ID. |
+| `FYND_PLATFORM_DOMAIN` | Depends | `""` | Fynd platform domain. |
+| `CONSOLE_DOMAIN` | Depends | `""` | Console domain used to derive console API and redirect bases. |
+| `GOOGLE_MAPS_API_KEY` | No | `""` | Google Maps API key. |
+| `BOLTIC_USERNAME` | Internal routes | `""` | Basic Auth username for selected internal routes. |
+| `BOLTIC_PASSWORD` | Internal routes | `""` | Basic Auth password for selected internal routes. |
+| `ADMIN_AUTH_STRICT` | No | `false` | Fail startup if admin auth configuration is missing. |
+| `ADMIN_ALLOWED_EMAILS` | Admin dashboard | `""` | Comma-separated allowlist for `/logistics/admin` OTP auth. |
+| `ADMIN_OTP_TTL_SECONDS` | No | `300` | Admin OTP challenge TTL. |
+| `ADMIN_OTP_MAX_ATTEMPTS_PER_CHALLENGE` | No | `5` | Admin OTP retry cap. |
+| `ADMIN_SESSION_TTL_SECONDS` | No | `14400` | Admin dashboard session TTL. |
+| `COMPANY_ID` | Depends | `""` | Default Fynd company ID for shared operations. |
+| `API_KEY` | Depends | `""` | General API key used by backend integrations. |
+| `APPLICATION_ID` | Depends | `""` | Fynd application ID. |
+| `APPLICATION_TOKEN` | Depends | `""` | Fynd application token. |
+| `LOGISTICS_DEFAULT_ENABLED` | No | `true` | Default logistics enabled state for first store registration. |
+| `LOGISTICS_OPERATIONS_SUPPORT_EMAIL` | No | `""` | Support contact shown when logistics operations are disabled. |
+| `LOGISTICS_DEFAULT_PASSWORD` | Depends | `""` | Default password for user creation. |
+| `LOGISTICS_EXTENSIONS` | Depends | `[]` | JSON string of logistics extension configs. |
+| `LOGISTICS_EXTENSION_API_BASE_URL` | Depends | `""` | Logistics extension API base URL. |
+| `LOGISTICS_EXTENSION_API_PATH` | Depends | `""` | Logistics extension API path. |
+| `LOGISTICS_EXTENSION_AUTH_TOKEN` | Depends | `""` | Auth token for logistics extension API. |
+| `LOGISTICS_EXTENSION_APPLICATION_ID` | Depends | `""` | Application ID for logistics extension calls. |
+| `FLP_PLATFORM_API_BASE_URL` | Depends | `""` | FLP Platform base URL. |
+| `SHOPIFY_LOGISTICS_FLP_PLATFORM_AUTH_TOKEN` | Depends | `""` | FLP Platform auth token. |
+| `FLP_WEBHOOK_CALLBACK_URL` | Depends | `""` | FLP webhook callback URL. |
+| `SHOPIFY_LOGISTICS_FLP_WEBHOOK_AUTH_TOKEN` | Depends | `""` | FLP webhook auth token. |
+| `BACKEND_DOMAIN` | Depends | `""` | Public backend domain used by some callback/config flows. |
+| `FULFILLMENT_PROCESSING_MODE` | No | `sync` | `sync` or `memory-queue`. |
+| `FULFILLMENT_SYNC_TIMEOUT` | No | `60000` | Sync fulfillment timeout in ms. |
+| `FULFILLMENT_SYNC_MAX_RETRIES` | No | `3` | Max sync fulfillment retry attempts. |
+| `FULFILLMENT_SYNC_RETRY_DELAY` | No | `500` | Initial retry delay in ms. |
+| `ALLOWED_DOMAINS_REGEX` | No | built-in array | CORS allow-list regex array. |
+| `FRAME_ANCESTORS` | No | `""` | CSP `frame-ancestors` value. |
+| `HTTP_REQUEST_TIMEOUT_MS` | No | `30000` | Default outbound HTTP timeout. |
+| `SHOPIFY_QUERY_COST_THRESHOLD` | No | `2000` | Shopify GraphQL cost threshold. |
+| `METRICS_DIR` | No | `/var/data/metrics/` | Prometheus file metrics directory. |
+| `METRICS_FLUSH_INTERVAL_MS` | No | `30000` | Metrics flush interval. |
+| `K8S_POD_NAME` | No | hostname | Instance label for metrics. |
+| `SENTRY_DSN` | No | `""` | Sentry DSN. |
+| `NEW_RELIC_ENABLED` | No | `""` | Enables New Relic integration when configured. |
+| `NEW_RELIC_APP_NAME` | No | `""` | New Relic app name. |
+| `NEW_RELIC_LICENSE_KEY` | No | `""` | New Relic license key. |
+| `BYPASS_SSL_VALIDATION` | No | `false` | Dev-only SSL validation bypass. |
+| `NODE_TLS_REJECT_UNAUTHORIZED` | No | `1` | Node TLS validation switch. |
 
 ---
 
-## shopify-logistics-app (web server)
+## `services/shopify-pincode-checker/web`
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SHOPIFY_API_KEY` | Yes | — | Shopify API key for the Fynd Logistics app. |
-| `SHOPIFY_API_SECRET` | Yes | — | Shopify API secret for Logistics app. |
-| `HOST` | Yes | — | Public HTTPS URL of this app. |
-| `BACKEND_URL` | Yes | — | URL of the `shopify-backend` service. |
-| `BASE_API_KEY` | Yes | — | `x-api-key` header value sent to `shopify-backend`. |
-| `REDIS_URL` | Yes | — | Redis connection string for session storage. |
-| `NODE_ENV` | No | `development` | `development` or `production`. |
-| `BACKEND_PORT` | No | `3000` | Port for the Express server. |
-| `FRONTEND_PORT` | No | `3001` | Port for the Vite dev server. |
-| `SENTRY_DSN` | No | — | Sentry DSN for the Logistics app. |
+| `NODE_ENV` | No | `development` | App environment. |
+| `PORT` | Deployment dependent | `""` | Express mini-server port. |
+| `BACKEND_PORT` | Local dev | — | Directly read by `web/index.js`; takes precedence over `PORT` for the Express mini-server. |
+| `FRONTEND_PORT` | Local dev | — | Directly read by `web/frontend/vite.config.js`. |
+| `HOST` | Yes | `""` | Public HTTPS URL of the embedded app. |
+| `BACKEND_URL` | Yes | `""` | Base URL for `services/shopify-backend`. |
+| `BASE_API_KEY` | Yes | `""` | `x-api-key` value forwarded to backend APIs. |
+| `SENTRY_DSN` | No | `""` | Sentry DSN. |
+| `SHOPIFY_API_KEY` | Yes | — | Used by `web/shopify.js` for Shopify SDK initialization. |
+| `SHOPIFY_API_SECRET` | Yes | — | Used by `web/shopify.js` for OAuth/session verification. |
+
+---
+
+## `services/shopify-logistics-app/web`
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `NODE_ENV` | No | `development` | App environment. |
+| `PORT` | Deployment dependent | `""` | Express mini-server port. |
+| `BACKEND_PORT` | Local dev | — | Directly read by `web/index.js`; takes precedence over `PORT` for the Express mini-server. |
+| `FRONTEND_PORT` | Local dev | — | Directly read by `web/frontend/vite.config.js`. |
+| `HOST` | Yes | `""` | Public HTTPS URL of the embedded app. |
+| `BACKEND_URL` | Yes | `""` | Base URL for `services/shopify-backend`. |
+| `BASE_API_KEY` | Yes | `""` | `x-api-key` value forwarded to backend APIs. |
+| `REDIS_SHOPIFY_BACKEND_READ_WRITE` | Yes | `""` | Redis session-storage URL for Shopify sessions. |
+| `SENTRY_DSN` | No | `""` | Sentry DSN. |
+| `SHOPIFY_API_KEY` | Yes | — | Used by `web/shopify.js` for Shopify SDK initialization. |
+| `SHOPIFY_API_SECRET` | Yes | — | Used by `web/shopify.js` for OAuth/session verification. |
 
 ---
 
 ## Notes
 
-- **Never commit `.env` files.** They are in `.gitignore` in all repos.
-- In production, all secrets are injected via Kubernetes Secrets managed by FIK (Fynd Infrastructure Kit).
-- The `convict` library validates all env vars on startup. If a required var is missing, the server will fail to start with a descriptive error.
-- Shopify app secrets are read from direct env vars (`LOGISTICS_SHOPIFY_API_*`, `PROMISE_SHOPIFY_API_*`) in `shopify-backend/config.js`.
+- Never commit real `.env` files.
+- `REDIS_URL`, `ADMIN_PANEL_PASSWORD`, `LOGISTICS_SHOPIFY_API_SECRET_KEY`, and `PROMISE_SHOPIFY_API_SECRET_KEY` are stale names for the current code paths.
+- Convict defaults allow many variables to be empty strings, but integrations will fail at runtime if required secrets are absent.

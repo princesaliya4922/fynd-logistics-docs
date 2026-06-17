@@ -7,7 +7,7 @@ sidebar_position: 3
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 Key terms used throughout these docs.
 
@@ -32,6 +32,7 @@ Key terms used throughout these docs.
 | **AWB** | **Airway Bill** — a unique tracking number assigned to a shipment by the delivery partner. |
 | **Serviceability** | Whether a specific pincode can be served by a merchant's warehouse(s). Determined by Fynd's serviceability API. |
 | **Promise** | A delivery date window shown to customers (e.g., "Delivery by Mon–Wed"). Calculated based on pincode serviceability + merchant processing time. |
+| **Fynd Ship** | Production Shopify app name for the Logistics app (`shopify.app.fynd-logistics-prod.toml`). |
 
 ---
 
@@ -51,6 +52,7 @@ Key terms used throughout these docs.
 | **OAuth** | The authentication flow used when a merchant installs a Shopify app. Grants the app an access token. |
 | **HMAC** | **Hash-based Message Authentication Code** — used by Shopify to sign webhook payloads so the receiver can verify authenticity. |
 | **Session Token** | A short-lived JWT issued by Shopify App Bridge that embedded apps use to authenticate backend requests. |
+| **App Bridge Session Token** | Same browser-side session token, forwarded as `Authorization: Bearer <token>` to backend-protected routes. |
 | **Embedded App** | A Shopify app rendered inside an iframe within the Shopify Admin. Both Fynd apps are embedded. |
 | **Fulfillment Order** | A Shopify object representing a group of line items to be fulfilled from a specific location. |
 | **Usage Record** | A billing event created via Shopify's API to charge a merchant for usage-based billing (e.g., per order). |
@@ -79,3 +81,6 @@ Key terms used throughout these docs.
 | **Create New** | The flow where a merchant creates a brand new Fynd company account during setup (Logistics app). |
 | **Jotai** | Atomic state management library used in the Logistics app frontend. |
 | **Convict** | Node.js configuration validation library used in all three backends for type-safe env var management. |
+| **Monorepo Snapshot** | The current `shopify-apps/services/*` copy of a service. Sync scripts can refresh these snapshots from legacy repos for UAT/production branches. |
+| **Deploy Tag** | A `deploy.*` git tag that triggers the `shopify-apps` Azure pipeline. |
+| **Admin OTP Auth** | Current `/logistics/admin` auth model: allowed-email OTP challenge, server session, CSRF token, and origin enforcement. |

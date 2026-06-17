@@ -7,13 +7,15 @@ sidebar_position: 2
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-All MongoDB collections from `shopify_backend` that are synced to BigQuery.
+Previously documented MongoDB collections from `shopify_backend` that sync to BigQuery.
+
+> **Current verification note:** The local `transformations` repo checked during this update does not contain `shopify_backend` transformation directories. Keep this page as the historical/target schema map until the active transformation location is confirmed.
 
 ---
 
-## Synced Collections
+## Previously Documented Collections
 
 ### stores → `fynd_zenith_data.stores`
 
@@ -138,9 +140,9 @@ All MongoDB collections from `shopify_backend` that are synced to BigQuery.
 
 ---
 
-## Collections NOT Synced
+## Collections Not Covered by This Map
 
-The following collections exist in MongoDB but do NOT currently have BigQuery transformations:
+The following collections exist in current `shopify-backend` models but are not covered by the historical map above:
 
 | Collection | Reason |
 |-----------|--------|
@@ -150,9 +152,13 @@ The following collections exist in MongoDB but do NOT currently have BigQuery tr
 | `logisticsOrders` | Not yet configured |
 | `logisticsDeliveryPartners` | Not yet configured |
 | `productAccounts` | Not yet configured |
+| `items` | Not documented in previous sync map |
+| `shipmentItems` | Not documented in previous sync map |
+| `returnItems` | Not documented in previous sync map |
+| `logisticsDeliveryPartners` | Not documented in previous sync map |
 
 Adding a new collection sync requires:
-1. Create `transformation.js` in `transformations/shopify/mongo/shopify_backend/<collection>/`
+1. Confirm the active transformation repo/branch and create `transformation.js` in `transformations/shopify/mongo/shopify_backend/<collection>/` or the replacement active path
 2. Create `destination-schemas.json` with BigQuery schema
 3. Add to `transformations/shopify/incremental-columns.js`
 4. Deploy via `cli_pipeline_manager.js`

@@ -7,7 +7,7 @@ sidebar_position: 5
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 How billing works for both Fynd Promise and Fynd Logistics.
 
@@ -31,77 +31,65 @@ Both apps use **Shopify usage-based billing** — merchants are charged based on
 
 ### Fynd Promise (shopify-pincode-checker)
 
-Defined in `web/billing.js`:
-
-| Plan | Per-Month Cap | Rate | Free Tier |
-|------|--------------|------|-----------|
-| Free | ₹1.00 | ₹0 (up to 50 orders) | 50 orders/month |
-| Growth | ₹999.00 | ₹1 per order | 50 orders/month |
-
-**Plan details (from code):**
-```javascript
-export const billingConfig = {
-  "Free": {
-    amount: 1.0,
-    currencyCode: "INR",
-    interval: BillingInterval.Usage,
-    usageTerms: "Free upto 50 orders."
-  },
-  "Growth": {
-    amount: 999.0,
-    currencyCode: "INR",
-    interval: BillingInterval.Usage,
-    usageTerms: "1 INR per order."
-  }
-}
-```
+The Promise subscription plan string used by the billing cron is **`Growth`** (see `controllers/billing.js`, which filters subscriptions on `plan: 'Growth'`). Billing is usage-based (₹1 per order, ₹999/mo cap), driven by `appUsageRecordCreate`.
 
 ### Fynd Logistics (shopify-logistics-app)
 
-Same plan structure — Free (50 fulfillments/month) and Growth (₹1/fulfillment, ₹999 cap).
+Logistics uses a separate plan model stored on the `logistics` document at `plan.name`, with values **`FREE`** / **`PAID`** (uppercase). The default plan for a newly registered merchant is **`PAID`** (`configs/logistics.config.js → DEFAULT_PLAN`). The FREE-tier free fulfillment limit is **5** (`FREE_PLAN_FULFILLMENT_LIMIT = 5`), not 50.
 
 ---
 
-## Free Tier Enforcement
+## Free Tier Enforcement (Logistics)
 
-The `fulfillmentLimitCheck` middleware (in `shopify-backend`) enforces the free tier limit:
+The `fulfillmentLimitCheck` middleware (`middlewares/fulfillmentLimitCheck.js`) enforces the FREE-plan fulfillment limit. It reads counters from the `logistics.plan` sub-document (`fulfillmentLimit` / `fulfillmentsUsed`) — **not** from the `orders` collection.
 
-1. Counts orders/fulfillments in the current billing period from MongoDB `orders` collection
-2. If count ≥ 50 and plan is `"Free"` → returns HTTP 402 with `LIMIT_EXCEEDED` error
-3. Merchant must upgrade to Growth plan to continue
+Behavior:
 
-This middleware is applied to:
-- `POST /logistics/fulfill/orders/:orderId`
-- `POST /logistics/fulfill/orders/bulk`
+1. Read-only methods (`GET`/`HEAD`/`OPTIONS`) always pass; plan info is attached to `req.planInfo`.
+2. `PAID` plan → unlimited fulfillments, always passes.
+3. `FREE` plan → `remaining = fulfillmentLimit - fulfillmentsUsed`.
+   - If `remaining <= 0` → HTTP **403** with `errorCode: FULFILLMENT_LIMIT_REACHED`, **and the shop is auto-disabled** (`logistics.enabled = false`, `plan.autoDisabledReason = 'LIMIT_EXHAUSTED'`).
+   - If the projected count for the request exceeds `remaining` → HTTP **403** with `errorCode: FULFILLMENT_REQUEST_EXCEEDS_REMAINING_QUOTA`.
+
+Applied to write requests on:
+- `/fulfill/orders/bulk`
+- `/fulfill/fulfillment`
+- any path matching `/fulfill/orders/`
+
+Excluded: `/fulfill/fulfillment/carrier-assignment-status` (treated as read-only).
+
+> The default FREE plan does not apply on registration since `DEFAULT_PLAN` is `PAID`; FREE applies only to merchants whose `logistics.plan.name` is explicitly set to `FREE`.
 
 ---
 
 ## Billing Cycle
 
-The billing cron job runs on the **7th, 14th, 21st, and 28th** of each month (roughly weekly).
+The billing cron is scheduled externally (FIK), roughly weekly.
 
-### Billing Cron Process
+### Billing Cron Process (actual logic — `controllers/billing.js`)
 
 ```
-1. Find all subscriptions in MongoDB WHERE status=active AND billingCycleEnd <= now
+1. Find subscriptions in MongoDB WHERE { status: 'ACTIVE', plan: 'Growth' }
+   (no billingCycleEnd <= now filter)
 2. For each subscription:
-   a. Count orders: MongoDB orders WHERE shop=X AND createdAt IN [cycleStart, cycleEnd]
-   b. Calculate billable orders: max(0, total - 50) [free tier deduction]
-   c. Calculate amount: billableOrders × ₹1
-   d. If amount > 0:
-      POST Shopify GraphQL: appUsageRecordCreate
-      {
-        subscriptionLineItemId: <lineItemId>,
-        price: { amount: billableOrders, currencyCode: "INR" },
-        description: "Fynd Promise usage: {billableOrders} orders"
-      }
-   e. Update MongoDB subscription:
-      billingCycleStart = now
-      billingCycleEnd = now + 7 days
-      consumedAmount += amount
-3. Log billing summary
-4. Process exits
+   a. Compute billing window [start, end] (start = last billingEnd or createdAt; end = start)
+   b. Skip if a transaction already exists for { subscriptionId, billingStart, billingEnd }
+   c. Load store + promise Shopify token (skip if missing)
+   d. Count orders: orders.find({ storeId: store._id, createdAt: [start, end) })
+   e. Apply usage to Shopify: appUsageRecordCreate with
+      price.amount = orderCount (full count — NO free-tier deduction),
+      description = "Weekly billing usage record" (hardcoded)
+   f. Update subscription.consumedAmount += orderCount
+      (cycle dates are NOT advanced)
+   g. Insert a transactions doc
+3. Return billing summary { successful, failed, skipped }
 ```
+
+> **Known issue:** The orders query filters on `orders.storeId`, but the `orders` model has no `storeId` field (it keys on `shop` + `orderId`). As written, this matches no orders, so `orderCount` is effectively `0`.
+
+> **Known issue:** The subscriptions filter uses `status: 'ACTIVE'` (uppercase) while the `subscriptions` schema enum is lowercase (`active`/`cancelled`/`expired`/`uninstalled`). The webhook writes the Shopify status value verbatim (uppercase `ACTIVE`), so this filter only matches docs written via that path, not schema-conformant ones.
+
+> **Known issue:** The transactions document created here sets `plan`, `consumedAmount`, and `approvedAmount` — fields that do not exist on the `transactions` schema — and omits the schema-required `applicationType`, `billingId`, and `totalAmount`. Inserting this document would fail schema validation.
 
 ### Triggering Manually
 
@@ -110,33 +98,34 @@ For debugging, the billing cron can be triggered via:
 GET /config/billingCron
 ```
 
-Or by running the server with `MODE=cron CRON_JOB=billing_trigger`.
+Or by running the cron entrypoint with `MODE=cron CRON_JOB=billing_trigger node server.js`.
 
 ---
 
 ## Subscription Lifecycle
+
+The `subscriptions` schema status enum is **lowercase**: `active`, `cancelled`, `expired`, `uninstalled` (note the `uninstalled` value). Date/amount fields are camelCase: `billingCycleStart`, `billingCycleEnd`, `subscribedAt`, `consumedAmount`.
 
 ```
 App installed
     ↓
 Merchant approves subscription on Shopify
     ↓
-Shopify webhook: app_subscriptions/update (status=active)
+Shopify webhook: app_subscriptions/update (status=ACTIVE)
     ↓
-MongoDB: subscriptions.status = "active"
-         subscriptions.billingCycleStart = now
-         subscriptions.billingCycleEnd = now + 7 days
+Backend validates the subscription against Shopify activeSubscriptions,
+then upserts the subscription record (status, plan, approvedAmount,
+subscriptionId, test flag)
     ↓
 [Normal operation: orders processed]
     ↓
-[Billing cron: every 7 days]
+[Billing cron runs]
     ↓
-[App uninstalled]
+[App uninstalled OR subscription cancelled]
     ↓
-Shopify webhook: app/uninstalled
+Shopify webhook: app/uninstalled / app_subscriptions/update (status=CANCELLED)
     ↓
-MongoDB: stores.isActive = false
-         subscriptions.status = "cancelled"
+Store deactivated and/or subscription marked cancelled
 ```
 
 ---
@@ -158,30 +147,17 @@ Similar structure with same plans.
 
 ---
 
-## Checking Subscription Status via API
+## Checking / Creating Subscription via API
 
 ```
-POST /api/subscription
-Body: { shop: "my-store.myshopify.com", appType: "promise" }
-
-Response:
-{
-  "active": true,
-  "plan": "Growth",
-  "ordersUsed": 127,
-  "billingCycleStart": "2026-03-14T00:00:00Z",
-  "billingCycleEnd": "2026-03-21T00:00:00Z"
-}
+POST /config/subscription
+Body: { shop: "my-store.myshopify.com", appType: "promise", subscriptionId: "..." }
 ```
+
+Handled by `controllers/subscriptions.js → subscriptionDetails`.
 
 ---
 
 ## Test Mode
 
-In `NODE_ENV=development`, Shopify billing uses **test mode** — no real charges are made. All billing operations use Shopify's test billing API which simulates the full flow without actual payment.
-
-From `billing.js`:
-```javascript
-// In test mode, all transactions are free
-const TEST_MODE = process.env.NODE_ENV !== 'production'
-```
+Test mode is driven by Shopify's own `test` flag, not by `NODE_ENV`. When a subscription is created/approved in Shopify with `test: true`, the backend reads that flag via GraphQL (`activeSubscriptions { test }`) and persists it as the `test` boolean on the `subscriptions` model. There is no `TEST_MODE` constant or `web/billing.js` config in `shopify-backend`.

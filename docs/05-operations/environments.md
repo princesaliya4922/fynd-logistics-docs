@@ -7,7 +7,7 @@ sidebar_position: 1
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 All deployment environments for the Fynd Shopify Ecosystem.
 
@@ -17,11 +17,9 @@ All deployment environments for the Fynd Shopify Ecosystem.
 
 | Environment | Realm | Purpose | Primary Source of Truth |
 |-------------|-------|---------|--------------------------|
-| Development | local | Individual developer testing | Local `.env` + Shopify CLI configs |
-| SIT | `fyndz0/m1` | System Integration Testing | `fik-fynd-extensions/environments/fynd/fyndz0/m1/` |
-| UAT | `fyndz5/m1` | User Acceptance Testing | `fik-fynd-extensions/environments/fynd/fyndz5/m1/` |
-| Extra logistics environments | `fyndz6/m1`, `fyndz7/m1`, `fyndz8/m1`, `fyndz9/m1` | Logistics extension/partner integration testing | `fik-fynd-extensions/environments/fynd/fyndz6..z9/m1/` |
-| Production | `fynd/m2` | Live merchant traffic | `fik-fynd-extensions/environments/fynd/fynd/m2/` |
+| Development | local | Individual developer testing | Local `.env` + Shopify CLI configs in `shopify-apps/services/*` |
+| UAT / non-prod | varies by env tag, commonly `fyndz5` | User Acceptance Testing | `shopify-apps` deploy tag + infrastructure env config |
+| Production | production env tags such as `fynd` | Live merchant traffic | `shopify-apps` deploy tag + infrastructure env config |
 
 ---
 
@@ -93,19 +91,16 @@ Source: `fik-fynd-extensions/environments/fynd/fyndz6..z9/m1/projects/logistics.
 |-------------|-------------|
 | `shopify.app.toml` | Production Promise app |
 | `shopify.app.pincode-serviceability-test.toml` | UAT/SIT testing app |
-| `shopify.app.promise-sit.toml` | SIT app variant |
 | `shopify.app.fynd-promise-testing.toml` | Testing app variant |
-| `shopify.app.promise-dev-10.toml` | Dev app variant |
-| `shopify.app.fynd-promise-dev.toml` | Dev app variant |
 
 ### Fynd Logistics
 
 | Config File | Typical Use |
 |-------------|-------------|
-| `shopify.app.fynd-logistics-uat.toml` | UAT logistics app |
-| `shopify.app.fynd-logistics-dev.toml` | Dev logistics app |
 | `shopify.app.fynd-logistics-dev-devx.toml` | DevX logistics app |
-| `shopify.app.fynd-logistics.toml` | Logistics app config (currently points to a temporary Cloudflare URL; validate before production use) |
+| `shopify.app.fynd-logistics-uat.toml` | UAT logistics app |
+| `shopify.app.fynd-logistics-prod.toml` | Production logistics app, named "Fynd Ship" |
+| `shopify.app.toml` | Present in the logistics service but Promise-branded; do not treat as production logistics config |
 
 ---
 
@@ -132,10 +127,10 @@ Source: `fik-fynd-extensions/environments/fynd/fyndz6..z9/m1/projects/logistics.
 
 ## Promotion Path
 
-1. Merge to main -> auto deploy to SIT (`fyndz0`)
-2. Release branch/tag -> deploy to UAT (`fyndz5`)
-3. Manual promotion -> Production (`fynd/m2`)
+1. Merge/sync code into the target `shopify-apps` branch (`uat` or `production`).
+2. Create a `deploy.*` tag with `scripts/tagdeploy.sh`.
+3. Let the monorepo Azure pipeline build changed services from `services/*`.
 4. Post-deploy verification:
-   - `/_healthz`
-   - `/_readyz`
-   - Sentry and logs for 15-30 min
+   - `GET /` on `shopify-backend`
+   - `GET /api-docs` on `shopify-backend`
+   - Sentry, logs, and merchant smoke tests for 15-30 min

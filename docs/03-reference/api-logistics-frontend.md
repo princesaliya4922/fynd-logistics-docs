@@ -7,7 +7,7 @@ sidebar_position: 7
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 All API calls made by the `shopify-logistics-app` React frontend.
 
@@ -22,6 +22,8 @@ const api = useLogisticsApi()
 // Adds: Authorization: Bearer <shopify_session_token>
 // Auto-retries once on 401/403 with fresh session token
 ```
+
+> **Proxy note:** Most `/api/*` endpoints are thin proxies in the frontend mini-server (`web/index.js`) to `shopify-backend` at `config.get("backend_url")`, authenticated with the `x-api-key: <BASE_API_KEY>` header. The `shop` value is always taken from the session (`res.locals.shopify.session.shop`), **not** from the request body — so any `shop` field in a request body is ignored. Several `POST /api/*` routes proxy to backend `GET` endpoints (noted per-endpoint below). Response shapes are defined by the backend; the examples below are illustrative.
 
 ---
 
@@ -66,19 +68,11 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 
 **Purpose:** Fetch Fynd companies associated with a shop (after OTP verification).
 
-**Request body:**
-```json
-{ "shop": "my-store.myshopify.com" }
-```
+**Request body:** ignored.
 
-**Response:**
-```json
-{
-  "companies": [
-    { "companyId": 123, "name": "My Company", "uid": "UID123" }
-  ]
-}
-```
+**Proxies to:** `GET ${backend}/logistics/companies?shop=<session.shop>` (shop from session).
+
+**Response:** backend-defined (e.g. a list of `{ companyId, name, uid }`).
 
 ---
 
@@ -90,17 +84,13 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 
 **Request body:**
 ```json
-{ "shop": "my-store.myshopify.com", "companyId": 123 }
+{ "company": 123 }
 ```
+(Uses `req.body.company` — note: `company`, not `companyId`.)
 
-**Response:**
-```json
-{
-  "salesChannels": [
-    { "id": "app-id-123", "name": "Shopify Store", "domain": "my-store.myshopify.com" }
-  ]
-}
-```
+**Proxies to:** `GET ${backend}/logistics/companies/${company}/saleschannels?shop=<session.shop>`.
+
+**Response:** backend-defined list of sales channels.
 
 ---
 
@@ -110,16 +100,15 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 
 **Purpose:** Fetch current setup configuration for a store.
 
-**Response:**
+**Request body:**
 ```json
-{
-  "companyDetails": { "companyId": 123, "name": "My Company" },
-  "salesChannelDetails": { "applicationId": "app-id" },
-  "processingTime": { "mode": "common", "value": 1 },
-  "shippingPreference": "cheapest",
-  "pickupLocations": [...]
-}
+{ "view": "existing-setup" }
 ```
+The `view` param is **required** — it is forwarded as a query param.
+
+**Proxies to:** `GET ${backend}/logistics/setup?shop=<session.shop>&view=<view>`.
+
+**Response:** backend-defined setup object.
 
 ---
 
@@ -129,10 +118,11 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 
 **Purpose:** Save complete logistics setup configuration.
 
-**Request body:**
+**Behavior:** Forwards the request body via HTTP **PUT** to `${backend}/logistics/setup?shop=<session.shop>`. (Persistence to MongoDB is backend behavior.)
+
+**Request body:** the full setup payload, e.g.:
 ```json
 {
-  "shop": "my-store.myshopify.com",
   "companyDetails": { "companyId": 123 },
   "salesChannelDetails": { "applicationId": "app-id" },
   "processingTime": { "mode": "common", "value": 1 },
@@ -151,17 +141,20 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 
 **Called by:** `EmailStep.jsx`
 
-**Purpose:** Send OTP to the merchant's Fynd company email.
+**Purpose:** Send OTP to the merchant's Fynd company email (link-existing flow).
 
-**Request body:**
+**Request body (from frontend):**
 ```json
-{ "email": "company@example.com", "shop": "my-store.myshopify.com" }
+{ "email": "company@example.com" }
 ```
 
-**Response:**
+**Proxies to:** `POST ${backend}/logistics/link` with body:
 ```json
-{ "success": true, "message": "OTP sent to company@example.com" }
+{ "companyEmail": "company@example.com", "shopEmail": "<shop email resolved via Shop.all>" }
 ```
+The frontend only sends `email`; the shop email is resolved server-side. Any `shop` field in the request body is unused.
+
+**Response:** backend-defined.
 
 ---
 
@@ -169,26 +162,20 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 
 **Called by:** `OtpStep.jsx`
 
-**Purpose:** Verify OTP and get associated companies.
+**Purpose:** Verify OTP and get associated companies (link-existing flow).
 
-**Request body:**
+**Request body (from frontend):**
 ```json
 {
   "email": "company@example.com",
   "otp": "123456",
-  "shop": "my-store.myshopify.com"
+  "challengeId": "<challenge id from sendOtp response>"
 }
 ```
 
-**Response:**
-```json
-{
-  "success": true,
-  "companies": [
-    { "companyId": 123, "name": "My Company" }
-  ]
-}
-```
+**Proxies to:** `POST ${backend}/logistics/link/verify` with body `{ companyEmail, otp, challengeId }`. Uses `challengeId` (not `shop`).
+
+**Response:** backend-defined.
 
 ---
 
@@ -198,17 +185,39 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 
 **Called by:** `CreateAccountForm.jsx`
 
-**Purpose:** Create a new Fynd company account.
+**Purpose:** Register the selected company + sales channel for the new-account flow.
 
-**Request body:**
+**Request body:** `company` and `saleschannel` (objects):
 ```json
 {
-  "shop": "my-store.myshopify.com",
-  "companyName": "My New Company",
-  "ownerEmail": "owner@example.com",
-  "phone": "+91-9876543210"
+  "company": { "companyId": 123, "name": "My New Company" },
+  "saleschannel": { "id": "app-id-123", "name": "Shopify Store" }
 }
 ```
+
+**Proxies to:** `POST ${backend}/logistics/companies/register` with `{ company, saleschannel }`.
+
+---
+
+## Create-New Email-OTP Gate APIs
+
+The create-new flow is gated behind a separate email-OTP verification (distinct from the link-existing OTP). All proxy to `${backend}/logistics/email/*`.
+
+### POST /api/email/send-otp
+
+**Request body:** `{ "email": "owner@example.com" }` → `POST ${backend}/logistics/email/send-otp`.
+
+### POST /api/email/verify-otp
+
+**Request body:** `{ "email", "otp", "challengeId" }` → `POST ${backend}/logistics/email/verify-otp`.
+
+### POST /api/email/reset-verification
+
+Empty body → `POST ${backend}/logistics/email/reset-verification`. Resets the email verification state.
+
+### GET /api/email/verification-status
+
+Proxies to `GET ${backend}/logistics/email/verification-status`. The response is merged with the resolved `shopEmail`.
 
 ---
 
@@ -247,15 +256,7 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 
 **Purpose:** Get current plan info including usage.
 
-**Response:**
-```json
-{
-  "plan": "Free",
-  "fulfillmentsUsed": 35,
-  "fulfillmentLimit": 50,
-  "isLimitReached": false
-}
-```
+**Behavior:** Pass-through proxy of `GET ${backend}/logistics/plan?shop=<session.shop>`. The response shape is backend-defined (plan tier + usage/limits are computed and enforced in `shopify-backend`).
 
 ---
 
@@ -272,6 +273,14 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 **Called by:** Pricing page
 
 **Purpose:** Get billing plan options with Shopify confirmation URLs.
+
+**Behavior:** For each configured plan, calls Shopify's `billing.request()` directly (not a backend proxy) and returns the results.
+
+**Response shape:**
+```json
+{ "messagee": "success", "data": [ /* Shopify billing.request results */ ] }
+```
+> Note: the success key is literally `messagee` (a typo in the code), not `message`.
 
 ---
 
@@ -303,35 +312,88 @@ Same as Promise app — fetches store details, checks `country_code === 'IN'`.
 
 ---
 
+## Config & Misc APIs
+
+### GET /api/location-pincode/:pincode
+
+**Purpose:** Look up serviceability/details for a pincode.
+
+**Proxies to:** `GET ${backend}/logistics/locations/pincode/<pincode>?shop=<session.shop>`.
+
+### POST /api/configdetails
+
+**Purpose:** Fetch merchant config.
+
+**Behavior:** Body ignored; proxies to `GET ${backend}/logistics/config?shop=<session.shop>`.
+
+### GET /api/magic-link
+
+**Purpose:** Get a deep-link into the Fynd platform.
+
+**Proxies to:** `GET ${backend}/logistics/magic-link?shop=<session.shop>&type=<type>` (`type` from `req.query.type`, defaults to `home`).
+
+### POST /api/updateConfig
+
+**Purpose:** Update merchant config.
+
+**Proxies to:** `POST ${backend}/config/merchant` with `{ shop: <session.shop>, ...req.body }`.
+
+---
+
 ## Admin UI Extension API Calls
 
-These are called from `extensions/fullfillment-extension/` directly to `shopify-backend`:
+These are called from the extensions (`fullfillment-extension`, `order-fullfilment`, `fynd-promise-checkout`) directly to `shopify-backend`.
 
-### GET /logistics/fulfill/orders/:orderId/fulfillment-status
+> The previously documented `GET .../fulfillment-status` and `POST /logistics/fulfill/orders/:orderId` endpoints **do not exist**. The real extension endpoints are listed below.
 
-**Called by:** `BlockExtension.jsx`
+### GET /logistics/fulfill/orders/:orderId/fulfillment-orders
 
-**Returns:** Full shipment status, AWB, tracking URL.
+**Called by:** `fullfillment-extension/BlockExtension.jsx`, `order-fullfilment/ActionExtension.jsx`
 
-### POST /logistics/fulfill/orders/:orderId
+**Returns:** the order's fulfillment orders and their current status.
 
-**Called by:** `BlockExtension.jsx` (manual fulfillment trigger)
+### POST /logistics/fulfill/fulfillment
+
+**Called by:** `fullfillment-extension/BlockExtension.jsx`
+
+Triggers a single-order fulfillment. Also used for retry.
+
+### POST /logistics/fulfill/orders/bulk
+
+**Called by:** `order-fullfilment/OrdersIndexExtension.jsx` (order-index bulk action), `order-fullfilment/ActionExtension.jsx`
+
+Triggers fulfillment for multiple orders.
+
+### POST /logistics/fulfill/fulfillment/carrier-assignment-status
+
+**Called by:** `BlockExtension.jsx`, `ActionExtension.jsx`, `OrdersIndexExtension.jsx`
+
+Polled to resolve carrier-assignment state after a fulfillment is created.
 
 ### GET /logistics/orders/:orderId/fulfillments/return-eligibility
 
-**Called by:** `ReturnBlockExtension.jsx`
+**Called by:** `ReturnBlockExtension.jsx` (includes `?shop=` query param)
 
 ### POST /logistics/returns
 
 **Called by:** `ReturnBlockExtension.jsx`
 
-**Request body:**
-```json
-{
-  "shop": "my-store.myshopify.com",
-  "orderId": "shopify-order-id",
-  "fulfillmentOrderId": "shopify-fo-id",
-  "reason": "damaged",
-  "items": [{ "lineItemId": "li-id", "quantity": 1 }]
-}
-```
+Creates returns. The body is built from the per-fulfillment `returnQuantities` state and may process **multiple** returns in one call (the response carries success/failed counts) — it is not a single-item body.
+
+### POST /logistics/returns/carrier-assignment-status
+
+**Called by:** `ReturnBlockExtension.jsx`
+
+Polled to resolve carrier-assignment state for created returns.
+
+### POST /logistics/shipments/documents
+
+**Called by:** `order-fullfilment/PrintShipLabelActionExtension.jsx`
+
+Fetches shipping labels / documents.
+
+### POST /logistics/promise/check
+
+**Called by:** `fynd-promise-checkout/Checkout.jsx`
+
+Checks the delivery promise for a checkout cart line.

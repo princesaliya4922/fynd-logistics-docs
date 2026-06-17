@@ -7,7 +7,7 @@ sidebar_position: 7
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 This document traces the main lifecycle flows across Shopify, Fynd services, and internal data stores.
 
@@ -48,33 +48,36 @@ sequenceDiagram
 sequenceDiagram
     participant Merchant
     participant PromiseFE as Promise Frontend
+    participant AppServer as Promise App Server
     participant Backend as backend
     participant Mongo as MongoDB
     participant Shopify as Shopify Admin API
 
     Merchant->>PromiseFE: Open app settings
-    PromiseFE->>Backend: GET /api/shop
-    Backend->>Shopify: Fetch shop details
-    Backend-->>PromiseFE: Region + shop metadata
+    PromiseFE->>AppServer: GET /api/shop
+    AppServer->>Shopify: Fetch shop details
+    AppServer-->>PromiseFE: Region + shop metadata
 
-    PromiseFE->>Backend: POST /api/subscription
-    Backend->>Mongo: Read/create subscription
-    Backend-->>PromiseFE: Active plan state
+    PromiseFE->>AppServer: POST /api/subscription
+    AppServer->>Mongo: Read/create subscription
+    AppServer-->>PromiseFE: Active plan state
 
-    PromiseFE->>Backend: GET /api/locations
-    Backend->>Mongo: Lookup storeMappings
+    PromiseFE->>AppServer: GET /api/locations
+    AppServer->>Mongo: Lookup storeMappings
     alt mapping exists
-        Backend-->>PromiseFE: Existing setup
+        AppServer-->>PromiseFE: Existing setup
     else first-time setup
-        Backend->>Shopify: Fetch locations
-        Backend-->>PromiseFE: Shopify locations
+        AppServer->>Shopify: Fetch locations
+        AppServer-->>PromiseFE: Shopify locations
     end
 
     Merchant->>PromiseFE: Update promise config
-    PromiseFE->>Backend: POST /api/updateConfig
+    PromiseFE->>Backend: POST /config/merchant
     Backend->>Mongo: Persist delivery settings
     Backend-->>PromiseFE: Updated config
 ```
+
+> **Note:** `/api/shop`, `/api/subscription`, `/api/locations`, and `/api/updateConfig` are **app-server** routes (in the Promise/Logistics web apps), not in `shopify-backend`. The `shopify-backend` config endpoints are: `GET`/`POST /config/merchant`, `POST /config/subscription`, `POST /config/fyndPromise`, `GET /config/shops` (plus `POST /config/register` used during install).
 
 ---
 
@@ -97,6 +100,16 @@ sequenceDiagram
     Backend-->>Ext: response payload
     Ext-->>Customer: Show delivery promise (or failure)
 ```
+
+### Request Body
+
+Per its Swagger definition (`routes/serviceability.js`), `POST /location/service` takes:
+
+```json
+{ "pincode": "000000", "shopifyProductId": 987654321, "shopifyShop": "my-shop-name" }
+```
+
+(All three fields are required.)
 
 ### Failure Path
 
@@ -132,6 +145,13 @@ sequenceDiagram
     Backend->>Shopify: Update fulfillment/tracking
 ```
 
+### Dual Workflow on `orders/create`
+
+The same `orders/create` webhook serves both billing (promise) and fulfillment (logistics). In `controllers/webhook.controller.js`, the handler calls:
+
+- `subscription.handleOrderCreated(...)` — promise/billing path, gated by `shouldRunPromiseWorkflows` (`!appName || appName === 'fynd-promise'`)
+- `processShopifyOrder(...)` — logistics path, gated by `shouldRunLogisticsWorkflows` (`appName === 'fynd-logistics'`) **and** the presence of a `logisticsData` document for the shop
+
 ### Idempotency and Retries
 
 - Duplicate webhook deliveries are expected; handlers must be idempotent.
@@ -143,30 +163,29 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A[Cron trigger on 7th/14th/21st/28th] --> B[Load active subscriptions]
-    B --> C{Subscription due for billing?}
-    C -- No --> D[Skip]
-    C -- Yes --> E[Count billable orders in cycle]
-    E --> F{Orders > free tier?}
-    F -- No --> G[Advance billing window only]
-    F -- Yes --> H[Create Shopify usage record]
+    A[Cron trigger - external FIK schedule] --> B["Load subscriptions (status='ACTIVE', plan='Growth')"]
+    B --> C[For each subscription: count orders in cycle window]
+    C --> H[Create Shopify usage record]
     H --> I{Usage API success?}
-    I -- Yes --> J[Update consumed amount + cycle window]
+    I -- Yes --> J[Update consumedAmount + write transactions doc]
     I -- No --> K[Log error and mark for retry/manual run]
-    D --> L[Next subscription]
-    G --> L
-    J --> L
+    J --> L[Next subscription]
     K --> L
 ```
 
 ### Operational Notes
 
 - Manual trigger: `GET /config/billingCron`.
-- Billing correctness depends on `orders.is_billed` and cycle window calculations.
+- The cron updates `consumedAmount` on the subscription and writes a `transactions` document. It does **not** apply a free-tier deduction and does **not** advance the billing-cycle window.
+- The order-count field is `isBilled` (camelCase) on the orders model, but the cron does **not** read or set `isBilled`.
+
+> **Known issue:** The cron query (`controllers/billing.js`) filters `subscriptions.find({ status: 'ACTIVE', plan: 'Growth' })`, but the model status enum is lowercase (`active`/`cancelled`/`expired`/`uninstalled`), so the uppercase `'ACTIVE'` matches nothing. The order count also uses `orders.find({ storeId, createdAt })`, but the `orders` model has no `storeId` field.
 
 ---
 
 ## Flow 6: MongoDB to BigQuery (Zenith)
+
+> **External pipeline:** This flow is **out of repo** — there is no BigQuery or sync code in `shopify-backend`. The checked-out `transformations` repo did not contain `shopify_backend` transformation files during the 2026-06-17 audit, so the collection names below should be treated as historical/target scope until the active pipeline location is confirmed.
 
 ```mermaid
 flowchart TD
@@ -181,8 +200,8 @@ flowchart TD
 
 ### Current Scope
 
-- Synced collections include `stores`, `orders`, `subscriptions`, `productMappings`, `storeMappings`, `courierPartners`.
-- `shipments` and `returns` are not yet synced (tracked in known gaps).
+- Previously documented collections include `stores`, `orders`, `subscriptions`, `productMappings`, `storeMappings`, `courierPartners`.
+- `shipments`, `returns`, and logistics-specific detail collections are not covered by that historical set (tracked in known gaps).
 
 ---
 

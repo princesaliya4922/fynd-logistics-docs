@@ -7,172 +7,111 @@ sidebar_position: 2
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 How the Fynd Shopify services are deployed and managed.
 
 ---
 
-## Deployment Framework: FIK
+## Deployment Framework
 
-All services are deployed using **FIK (Fynd Infrastructure Kit)** — Fynd's internal Kubernetes deployment framework similar to Helm. FIK reads YAML configuration files from the `fik-fynd-extensions` repository.
+The three services are deployed from the `shopify-apps` monorepo through Azure Pipelines and Fynd's infrastructure templates. The active pipeline is `shopify-apps/azure-pipeline.yaml`; it passes `services/*` paths to the shared `Infrastructure/kube-infrastructure` template.
 
-### FIK Config Repository
-
-```
-fik-fynd-extensions/
-├── base_values/
-│   ├── values.yaml                    # Global defaults
-│   └── projects/
-│       ├── shopify-app.yaml           # Promise + Backend base config
-│       └── logistics.yaml             # Logistics app base config
-└── environments/
-    ├── fynd/m2/projects/              # Production configs
-    ├── fynd/fyndz5/m1/projects/       # UAT configs
-    └── fynd/fyndz0/m1/projects/       # SIT configs
-```
+FIK/Fynd infrastructure configuration still owns environment-specific Kubernetes settings, service hosts, secrets, and cron schedules.
 
 ---
 
-## Kubernetes Resources per Service
+## Runtime Services
 
-### shopify-backend
+| Service Path | Runtime Role | Public Host Family |
+|--------------|--------------|--------------------|
+| `services/shopify-backend` | Shared API server, webhooks, admin dashboard, cron entry point | `shopify-backend.extensions.*` |
+| `services/shopify-pincode-checker` | Fynd Promise embedded app and Shopify extensions | `pincode-checker.extensions.*` |
+| `services/shopify-logistics-app` | Fynd Logistics embedded app and Shopify extensions | `shopify-logistics.extensions.*` |
 
-```yaml
-service: shopify-backend.extensions
-cluster: ext
-ingress:
-  prefix: shopify-backend.extensions
-  domain: FyndPlatform
+### Backend Process Modes
 
-containers:
-  - type: server
-    replicas: { desired: 1, min: 1, max: 20 }
-    resources:
-      requests: { cpu: 100m, memory: 400Mi }
-      limits: { cpu: 500m, memory: 1000Mi }
+`services/shopify-backend/server.js` always initializes MongoDB and Redis first. After that:
 
-  - type: cronJob
-    name: BillingCronJob
-    schedule: "0 0 7,14,21,28 * *"
-    env:
-      MODE: cron
-      CRON_JOB: billing_trigger
+| Env | Behavior |
+|-----|----------|
+| `MODE=cron` | Loads `cron/index.js` and dispatches the job named by `CRON_JOB` |
+| anything else | Loads `index.js` and starts the FIT/Express HTTP app |
 
-databases:
-  - type: mongodb
-    name: SHOPIFY_BACKEND
-    access: [READ_WRITE, READ_ONLY]
-  - type: redis
-    name: SHOPIFY_BACKEND
-    access: [READ_WRITE, READ_ONLY]
-```
+Recognized cron jobs in code are `billing_trigger`, `billing_trigger_last_day`, and `test_cron_job`.
 
-### shopify-pincode-checker
+---
 
-```yaml
-service: pincode-checker.extensions
-cluster: ext
-ingress:
-  prefix: pincode-checker.extensions
-  domain: FyndPlatform
+## Data Stores
 
-containers:
-  - type: server
-    replicas: { desired: 1, min: 1, max: 20 }
-    resources:
-      requests: { cpu: 100m, memory: 400Mi }
-```
+| Component | Store | Env Vars |
+|-----------|-------|----------|
+| `shopify-backend` | MongoDB | `MONGO_SHOPIFY_BACKEND_READ_WRITE`, `MONGO_SHOPIFY_BACKEND_READ_ONLY` |
+| `shopify-backend` | Redis | `REDIS_SHOPIFY_BACKEND_READ_WRITE`, `REDIS_SHOPIFY_BACKEND_READ_ONLY` |
+| `shopify-pincode-checker` app server | SQLite session file | `web/database.sqlite` |
+| `shopify-logistics-app` app server | Redis session storage | `REDIS_SHOPIFY_BACKEND_READ_WRITE` |
 
-### shopify-logistics-app
-
-```yaml
-service: shopify-logistics.extensions
-cluster: ext
-ingress:
-  prefix: shopify-logistics.extensions
-  domain: FyndPlatform
-
-containers:
-  - type: server
-    replicas: { desired: 1, min: 1, max: 20 }
-    resources:
-      requests: { cpu: 100m, memory: 400Mi }
-```
+The logistics app stores Shopify sessions with the `shopify_logistics_session_` prefix. The Promise app still uses local SQLite sessions and therefore has weaker horizontal scaling characteristics than the Redis-backed logistics app.
 
 ---
 
 ## Docker Images
 
-All services use **multi-stage Docker builds**:
+Each service directory contains its own `Dockerfile`. The monorepo pipeline tells the shared infrastructure template to build each service from:
 
-**Base image:** `node:22-alpine`
+```yaml
+servicePathPrefix: services
+serviceDockerfile: Dockerfile
+```
 
-**Build process:**
-1. Install Python, gcc, g++ (for native npm modules)
-2. Configure Azure DevOps private registry access
-3. `npm ci --legacy-peer-deps`
-4. Copy source code
-
-**Runtime:**
-1. Copy built app from builder stage
-2. Expose port (8081 for frontends, 8000 for backend)
-3. `CMD: npm start`
+The root pipeline can skip unchanged service builds (`buildOnlyWhenChanged: true`) or force builds through tag messages emitted by `scripts/tagdeploy.sh`.
 
 ---
 
 ## Network Architecture
 
 ```
-Internet
+Internet / Shopify / Fynd
     ↓
-Nginx Ingress Controller (Kubernetes)
-    ↓ (routes by hostname)
-    ├── pincode-checker.extensions.* → shopify-pincode-checker pods
-    ├── shopify-backend.extensions.* → shopify-backend pods
-    └── shopify-logistics.extensions.* → shopify-logistics-app pods
+Ingress / Fynd infrastructure
+    ↓
+    ├── pincode-checker.extensions.*  -> services/shopify-pincode-checker
+    ├── shopify-logistics.extensions.* -> services/shopify-logistics-app
+    └── shopify-backend.extensions.*  -> services/shopify-backend
 ```
 
-**CORS:** The backend uses `ALLOWED_DOMAINS_REGEX` to whitelist allowed origins. Shopify Admin domains and the app domains are in the allowed list.
-
-**Nginx config:** The logistics app has a custom nginx body size limit to handle large fulfillment payloads.
+`shopify-backend` applies CORS using `ALLOWED_DOMAINS_REGEX`. The default allow-list includes Fynd domains, Shopify CDN, `*.myshopify.com`, and localhost-style development origins.
 
 ---
 
-## Secrets Management
+## Security and Secrets
 
-Target state for secrets management:
-1. **Kubernetes Secrets** — injected as environment variables at runtime
-2. **FIK Vault integration** — secrets fetched from HashiCorp Vault during deployment
-3. **ExternalSecrets** — synced from Vault to Kubernetes Secrets
+Runtime secrets are expected to be injected as environment variables by the deployment platform. Do not add new secrets to git-tracked files.
 
-Current state note:
-- Some environment project YAMLs still contain inline secret-like values under `CommonEnvs`.
-- This should be treated as migration debt and moved to Vault/Kubernetes secret references.
+Important secret families:
 
-Policy:
-- Do not add new secrets to git-tracked files.
-- Keep `.env` files local-only and gitignored.
+| Area | Variables |
+|------|-----------|
+| Shopify app verification | `LOGISTICS_SHOPIFY_API_KEY`, `SHOPIFY_LOGISTICS_LOGISTICS_SHOPIFY_API_SECRET_KEY`, `PROMISE_SHOPIFY_API_KEY`, `SHOPIFY_LOGISTICS_PROMISE_SHOPIFY_API_SECRET_KEY` |
+| Backend data stores | `MONGO_SHOPIFY_BACKEND_*`, `REDIS_SHOPIFY_BACKEND_*` |
+| Fynd extension auth | `EXTENSION_API_KEY`, `EXTENSION_API_SECRET`, `LOGISTICS_EXTENSION_AUTH_TOKEN` |
+| FLP | `FLP_PLATFORM_API_BASE_URL`, `SHOPIFY_LOGISTICS_FLP_PLATFORM_AUTH_TOKEN`, `SHOPIFY_LOGISTICS_FLP_WEBHOOK_AUTH_TOKEN` |
+| Admin dashboard | `ADMIN_ALLOWED_EMAILS`, `ADMIN_OTP_*`, `ADMIN_SESSION_TTL_SECONDS` |
+| Internal Basic Auth | `BOLTIC_USERNAME`, `BOLTIC_PASSWORD` |
 
----
-
-## Scaling
-
-All services autoscale based on CPU/memory:
-- Minimum: 1 replica
-- Maximum: 20 replicas (server), 5 replicas (workers)
-
-The `FULFILLMENT_PROCESSING_MODE=memory-queue` option allows horizontal scaling of fulfillment processing without external queue infrastructure.
+`BOLTIC_USERNAME` / `BOLTIC_PASSWORD` are currently used for selected internal routes such as `/map/mapInventories` and `/webhook/extension/status`, not for the main logistics admin dashboard.
 
 ---
 
 ## Health Checks
 
-All services expose health endpoints used by Kubernetes:
+Current backend HTTP behavior:
 
-| Endpoint | Kubernetes Probe | Success Criteria |
-|----------|-----------------|-----------------|
-| `/_healthz` | Liveness probe | 200 OK = process alive |
-| `/_readyz` | Readiness probe | 200 OK = ready to accept traffic |
+| Endpoint | Result |
+|----------|--------|
+| `GET /` | `200 OK` HTML body |
+| `GET /api-docs` | Swagger UI |
+| `GET /_healthz` | 404, not implemented |
+| `GET /_readyz` | 404, not implemented |
 
-If `/_readyz` returns non-200, Kubernetes stops sending traffic to that pod until it recovers.
+If Kubernetes probes still target `/_healthz` or `/_readyz`, the probe configuration must be changed or the endpoints must be implemented.

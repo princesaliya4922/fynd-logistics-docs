@@ -7,9 +7,9 @@ sidebar_position: 2
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-Step-by-step guide for a merchant to install and complete the Fynd Logistics setup.
+Step-by-step guide for a merchant to install and complete the Fynd Logistics setup. The production Shopify app is published as **Fynd Ship**.
 
 ---
 
@@ -23,7 +23,7 @@ Step-by-step guide for a merchant to install and complete the Fynd Logistics set
 
 ## Step 1: Install the App
 
-1. Find **Fynd Logistics** on the Shopify App Store
+1. Find **Fynd Ship** / Fynd Logistics on the Shopify App Store or install it from the approved Shopify Partner app link
 2. Click **Add app**
 3. Review permissions (more extensive than Promise app — includes fulfillments and returns management)
 4. Click **Install app**
@@ -41,9 +41,9 @@ If you already have a company on the Fynd platform:
 1. Click **Link Existing Account**
 2. Enter your **company email address**
 3. Click **Send OTP** — you'll receive a 6-digit OTP in your email
-4. Enter the OTP within 10 minutes
+4. Enter the OTP from the email flow
 5. Select your **company** from the dropdown
-6. Select your **sales channel** (the Shopify channel)
+6. Select the **sales channel** in the same company-selection step
 7. Proceed to configuration
 
 ### Option B: Create New Account
@@ -51,12 +51,13 @@ If you already have a company on the Fynd platform:
 If you're new to Fynd:
 
 1. Click **Create New Account**
-2. Fill in company details:
+2. Complete the email OTP verification gate
+3. Fill in company and sales-channel details:
    - Company name
    - Owner email
    - Phone number
-3. Click **Create** — a new Fynd company will be registered
-4. Proceed to configuration
+4. Click **Create** — a new Fynd company and sales channel will be registered
+5. Proceed to configuration
 
 ---
 
@@ -84,7 +85,7 @@ The **FyndSetup** form collects your preferences:
 
 ### Delivery Promise (optional)
 
-If you also have the Fynd Promise app installed, configure the delivery window displayed to customers.
+If delivery promise is enabled for the logistics setup, configure the delivery window displayed to customers.
 
 Click **Save Setup** when done.
 
@@ -92,12 +93,14 @@ Click **Save Setup** when done.
 
 ## Step 4: Verify the Admin Extension
 
-The Fynd Logistics Admin Extension adds a block to your order detail pages:
+The Fynd Logistics extensions add order-detail blocks and order actions:
 
 1. Go to **Shopify Admin → Orders**
 2. Open any order
-3. You should see a **Fynd Fulfillment** block on the right side
-4. This shows fulfillment status and allows manual fulfillment trigger
+3. You should see fulfillment and return blocks on the order page
+4. The blocks show fulfillment/return status and can trigger fulfillment or return actions where eligible
+
+The logistics app also ships an `order-fullfilment` extension for order-detail actions, order-index bulk fulfillment, and shipping-label printing.
 
 ---
 
@@ -117,8 +120,8 @@ The app tracks your setup progress in Jotai atoms. The current view is stored in
 | View | Description |
 |------|-------------|
 | `PROMOTIONAL` | New merchant, hasn't started setup |
-| `LINK_EXISTING` | Going through OTP flow |
-| `CREATE_NEW` | Creating a new company |
+| `LINK_EXISTING` | Going through link-existing OTP flow |
+| `CREATE_NEW` | Email verification plus new company creation |
 | `EXISTING_SETUP` | Reviewing/editing completed setup |
 | `SUCCESS` | Setup complete |
 

@@ -7,7 +7,7 @@ sidebar_position: 4
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
@@ -32,11 +32,16 @@ web/frontend/index.jsx         ← React root, initializes i18n
         ├── PolarisProvider
         ├── AppBridgeProvider
         ├── QueryProvider
-        └── Routes.jsx
+        └── Routes.jsx  (file-based routing from web/frontend/pages/)
             ├── /              → pages/index.jsx
             ├── /settings      → pages/settings.jsx
-            └── /pricing       → pages/pricing.jsx
+            ├── /pricing       → pages/pricing.jsx
+            ├── /pagename      → pages/pagename.jsx
+            ├── /ExitIframe    → pages/ExitIframe.jsx
+            └── *              → pages/NotFound.jsx (catch-all)
 ```
+
+> Routes are generated from files in `web/frontend/pages/`. In addition to the three main pages above, the directory also contains `pagename.jsx`, `ExitIframe.jsx` (OAuth iframe escape), and `NotFound.jsx` (404 catch-all).
 
 ### State Architecture (Jotai)
 
@@ -52,17 +57,19 @@ web/frontend/store/
 └── apiAtoms.js             ← cached API responses
 ```
 
-**Navigation views (from `navigationManager.js`):**
-- `PROMOTIONAL` — Shown to new merchants before setup
-- `CREATE_NEW` — Create a new Fynd company account
-- `LINK_EXISTING` — Link an existing Fynd account via OTP
-- `EXISTING_SETUP` — View/edit existing configuration
-- `SUCCESS` — Setup complete confirmation
+**Navigation views (from `navigationManager.js`):** the `VIEWS` constant values are kebab-case strings:
+- `PROMOTIONAL` (`'promotional'`) — Shown to new merchants before setup
+- `CREATE_NEW` (`'create-new'`) — Create a new Fynd company account (email-OTP gated)
+- `LINK_EXISTING` (`'link-existing'`) — Link an existing Fynd account via OTP
+- `EXISTING_SETUP` (`'existing-setup'`) — View/edit existing configuration
+- `SUCCESS` (`'success'`) — Setup complete confirmation
 
-**Link Existing steps:**
-- `EMAIL` — Enter company email
-- `OTP` — Verify OTP
-- `COMPANY_SELECTION` — Pick company + sales channel
+**Link Existing steps (`LINK_STEPS`):**
+- `EMAIL` (`'email'`) — Enter company email
+- `OTP` (`'otp'`) — Verify OTP
+- `COMPANY_SELECTION` (`'company-selection'`) — Pick company **and** sales channel
+
+> There is no separate "sales channel" step — sales-channel selection is part of the `COMPANY_SELECTION` step.
 
 ### Component Tree
 
@@ -89,29 +96,51 @@ RegionHandle (country_code === 'IN' check)
 
 | Hook | File | Purpose |
 |------|------|---------|
-| `useLogisticsApi` | `utils/apiClient.js` | Authenticated API client with session token + 401 retry |
+| `useLogisticsApi` | `utils/apiClient.js` | Authenticated API client — sends `Authorization: Bearer <session token>`, auto-retries once on 401/403 with a fresh token |
+| `useEmailVerification` | `hooks/useEmailVerification.js` | Backs the create-new email-OTP gate (send/verify/reset/status) |
 | `useOTPVerification` | `hooks/useOTPVerification.js` | OTP verification logic |
 | `useOtpFlow` | `hooks/useOtpFlow.js` | Combined send + verify OTP flow |
-| `useOTPInput` | `hooks/useOTPInput.js` | 6-digit OTP input field management |
+| `useOTPInput` | `hooks/useOTPInput.js` | OTP input field management |
 | `useResendTimer` | `hooks/useResendTimer.js` | Countdown timer for OTP resend |
 | `useViewNavigation` | `hooks/useViewNavigation.js` | Navigate between setup views |
 | `useLocationData` | `hooks/useLocationData.js` | Fetch and format location data |
 | `usePlanStatus` | `hooks/usePlanStatus.js` | Subscription plan status |
+| `usePlanManagement` | `hooks/usePlanManagement.js` | Billing plan changes + navigation to plan selection |
+| `useAppQuery` | `hooks/useAppQuery.js` | React Query wrapper over `useAuthenticatedFetch` |
+| `useAuthenticatedFetch` | `hooks/useAuthenticatedFetch.js` | App Bridge auth-aware `fetch` with reauthorization handling |
+| `useToast` | `hooks/useToast.js` | Toast notification helpers (success/error/info/warning) |
 
 ---
 
 ## Backend Mini-Server
 
 Similar to the Promise app but:
-- Uses **Redis** for session storage (via `@shopify/shopify-app-session-storage-redis`)
+- Uses **Redis** for session storage (via `@shopify/shopify-app-session-storage-redis`, configured in `web/shopify.js`)
 - Session key prefix: `shopify_logistics_session_`
+- Redis connection string comes from the `REDIS_SHOPIFY_BACKEND_READ_WRITE` env var (`web/config.js`)
 - On `APP_UNINSTALLED` webhook → deletes all Redis sessions for that shop
 
 **On install** (`fyndIntegration.js`):
-Creates additional webhooks vs. Promise app:
+The store is registered with the backend and the following webhooks are created. All Fynd webhooks are registered with the `?app=fynd-logistics` query suffix and point at `${FYND_EXTERNAL_URL}/webhook/store/{shop}/{topic}`.
+
+**REST / Admin API topics** (Shopify Admin API version `2024-10`):
+- `inventory_levels/update`
+- `locations/create`
+- `locations/update`
+- `orders/create`
+- `app/uninstalled`
+- `app_subscriptions/update`
 - `fulfillments/create`
 - `fulfillments/update`
-- `returns/cancel` (GraphQL subscription webhook)
+- `products/update`
+
+**GraphQL subscription topics:**
+- `returns/cancel`
+- `returns/request`
+- `returns/approve`
+- `returns/decline`
+
+**Dual uninstall registration:** In addition to the REST `app/uninstalled` webhook above, a **separate** `app/uninstalled` webhook is registered pointing at `${frontendUrl}/api/webhooks` (the frontend mini-server's handler that clears Redis sessions). This second registration does **not** carry the `?app=fynd-logistics` suffix.
 
 ---
 
@@ -126,15 +155,18 @@ target = "admin.order-details.block.render"
 
 **`BlockExtension.jsx`:**
 - Renders on the Shopify Admin order details page
-- Calls `shopify-backend` `/logistics/fulfill/orders/:orderId/fulfillment-status`
+- Reads fulfillment orders via `GET /logistics/fulfill/orders/:orderId/fulfillment-orders`
+- Triggers a single-order fulfillment via `POST /logistics/fulfill/fulfillment`
+- Polls carrier-assignment status via `POST /logistics/fulfill/fulfillment/carrier-assignment-status`
 - Displays Fynd shipment status, AWB number, tracking info
-- Allows triggering fulfillment from the order page
 
 **`ReturnBlockExtension.jsx`:**
 - Second block on the same page
-- Checks return eligibility via `/logistics/orders/:orderId/fulfillments/return-eligibility`
-- Allows merchants to initiate returns from the order page
-- Calls `/logistics/returns` to create return
+- Checks return eligibility via `GET /logistics/orders/:orderId/fulfillments/return-eligibility`
+- Creates returns via `POST /logistics/returns`
+- Polls return carrier-assignment status via `POST /logistics/returns/carrier-assignment-status`
+
+> There is also a separate **`order-fullfilment`** extension containing three action extensions (`ActionExtension.jsx`, `OrdersIndexExtension.jsx`, `PrintShipLabelActionExtension.jsx`) used for the order-details action, bulk fulfillment from the order index, and shipping-label printing. Plus the logistics app ships the storefront-facing `fynd-promise-checkout` (checkout UI) and `fynd-promise-pdp` (theme app) extensions. See [Local Setup — Fynd Logistics](../01-getting-started/local-setup-logistics.md) and the Shopify extensions reference for details.
 
 ---
 
@@ -145,27 +177,26 @@ target = "admin.order-details.block.render"
 ```
 Merchant enters company email
     ↓
-POST /api/sendOtp
-  → backend calls Fynd Central: verify email + send OTP
+POST /api/sendOtp  { email }
+  → proxies to ${backend}/logistics/link
+    with { companyEmail: email, shopEmail }  (shopEmail resolved via Shop.all)
     ↓
-Merchant enters OTP (6 digits, 10s resend timer)
+Merchant enters OTP (resend timer)
     ↓
-POST /api/verifyOtp
-  → backend calls Fynd Central: verify OTP, return company list
+POST /api/verifyOtp  { email, otp, challengeId }
+  → proxies to ${backend}/logistics/link/verify
+    with { companyEmail, otp, challengeId }
     ↓
-Merchant selects Company (from /api/getcompanies)
+Merchant selects Company (POST /api/getcompanies → GET ${backend}/logistics/companies?shop=…)
     ↓
-Merchant selects Sales Channel (from /api/getsaleschannel)
+Merchant selects Sales Channel (POST /api/getsaleschannel { company } → GET ${backend}/logistics/companies/{company}/saleschannels?shop=…)
     ↓
 FyndSetup form:
   - Configure warehouse locations (from /api/locations)
-  - Set processing time
-  - Set delivery promise view
-  - Set shipping preferences
+  - Set processing time / delivery promise / shipping preferences
     ↓
-POST /api/updateSetup
-  → backend saves to MongoDB logistics collection
-  → backend calls Fynd Central to link sales channel
+POST /api/updateSetup  → HTTP PUT ${backend}/logistics/setup?shop=…
+  (the backend persists the setup; MongoDB writes are backend-owned)
     ↓
 FyndSuccessSetup screen
 ```
@@ -175,10 +206,12 @@ FyndSuccessSetup screen
 ```
 Merchant clicks "Create New Account"
     ↓
-CreateAccountForm: collect company details
+Email-OTP gate (POST /api/email/send-otp → /api/email/verify-otp)
     ↓
-POST /api/registercompany
-  → backend calls Fynd Central to create company
+CreateAccountForm: collect company + sales channel
+    ↓
+POST /api/registercompany  { company, saleschannel }
+  → POST ${backend}/logistics/companies/register
     ↓
 Proceed to FyndSetup (same as above)
 ```
@@ -187,12 +220,14 @@ Proceed to FyndSetup (same as above)
 
 ## App Configuration Files
 
-| File | Environment |
-|------|------------|
-| `shopify.app.toml` | Default/production |
-| `shopify.app.fynd-logistics.toml` | Production (named) |
-| `shopify.app.fynd-logistics-uat.toml` | UAT |
-| `shopify.app.fynd-logistics-dev.toml` | Development |
+| File | App | Environment | webhooks `api_version` |
+|------|-----|------------|------------------------|
+| `shopify.app.toml` | **Fynd Promise** (`name = "Fynd Promise"`, `handle = "fynd-promise"`) | default config in this repo | `2025-10` |
+| `shopify.app.fynd-logistics-dev-devx.toml` | `fynd-logistics-dev-devx` | Development (DevX) | `2026-01` |
+| `shopify.app.fynd-logistics-uat.toml` | `fynd-logistics-uat` | UAT | `2026-01` |
+| `shopify.app.fynd-logistics-prod.toml` | **Fynd Ship** (`name = "Fynd Ship"`) | Production | `2026-01` |
+
+> **Naming caveat:** The default `shopify.app.toml` in this directory is actually the **Fynd Promise** config (it carries `client_id`, `name = "Fynd Promise"`, `handle = "fynd-promise"`), not a logistics config. The production logistics app is published under the name **"Fynd Ship"** (`shopify.app.fynd-logistics-prod.toml`). There is **no** `shopify.app.fynd-logistics.toml` or `shopify.app.fynd-logistics-dev.toml`.
 
 **Required OAuth Scopes:**
 ```
@@ -205,5 +240,7 @@ write_merchant_managed_fulfillment_orders, write_orders,
 write_products, write_returns, write_script_tags,
 write_third_party_fulfillment_orders
 ```
+
+All logistics configs (dev/uat/prod) additionally include `read_customer_merge`. The production config (`shopify.app.fynd-logistics-prod.toml`) sets the webhook `api_version` to `2026-01`.
 
 Note: Logistics app requests significantly more scopes than Promise app, reflecting its deeper order and fulfillment management capabilities.

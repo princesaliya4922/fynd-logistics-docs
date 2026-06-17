@@ -7,7 +7,7 @@ sidebar_position: 5
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
@@ -59,7 +59,7 @@ Symptoms:
 
 Investigation:
 ```bash
-curl https://shopify-backend.extensions.fynd.com/_healthz
+curl -i https://shopify-backend.extensions.fynd.com/
 
 db.shipments.find({
   status: "queued",
@@ -99,7 +99,7 @@ Fix:
 ### Billing Cron Not Running
 
 Symptoms:
-- `billingCycleEnd` in past but no usage records
+- `billingCycleEnd` in past but no transactions/usage drift reconciliation
 - Billing drift reports from merchants
 
 Investigation:
@@ -113,8 +113,9 @@ db.subscriptions.find({
 ```
 
 Fix:
-- Trigger billing manually via `GET /config/billingCron`
-- Run cron process with `MODE=cron CRON_JOB=billing_trigger node server.js`
+- Review [Run Billing Cron](../04-how-to/run-billing-cron.md) and [Billing Reference](../03-reference/billing.md) first. The current cron code has known filter/schema drift.
+- Run the cron process only after validating the query window and target records:
+  `MODE=cron CRON_JOB=billing_trigger node server.js`
 
 ---
 

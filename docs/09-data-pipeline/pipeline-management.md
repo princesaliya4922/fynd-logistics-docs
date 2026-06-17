@@ -7,9 +7,11 @@ sidebar_position: 3
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
-How to manage and operate the MongoDB → BigQuery data pipelines.
+How to manage and operate MongoDB -> BigQuery data pipelines.
+
+> **Current verification note:** The local `transformations` repository has `cli_pipeline_manager.js`, but no checked-in `shopify_backend` transform directory was found. Confirm the active repository/branch before creating, deploying, or reprocessing Shopify backend pipelines.
 
 ---
 
@@ -114,7 +116,7 @@ To sync a new MongoDB collection to BigQuery:
 
 3. **Write destination-schemas.json** with BigQuery field types
 
-4. **Register incremental column:**
+4. **Register incremental column after confirming the active path:**
    ```javascript
    // transformations/shopify/incremental-columns.js
    'mongo.shopify_backend.<collection>': 'updatedAt'

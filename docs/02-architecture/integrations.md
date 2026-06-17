@@ -7,7 +7,7 @@ sidebar_position: 6
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 `shopify-backend` integrates with multiple external services. This document details each integration.
 
@@ -17,7 +17,7 @@ sidebar_position: 6
 
 **Purpose:** Company/user management, sales channel operations, subscription management.
 
-**Base URL:** `config.get('logistics_api_base_url')` (environment-specific)
+**Base URLs / paths:** The current config uses nested `logistics_api.*` keys. Most paths are configurable under `logistics_api.paths.*`; auth values live under `logistics_api.auth.*`.
 
 **Auth:** API key headers (`x-api-key`, `x-api-secret`) or Admin Bearer token
 
@@ -25,9 +25,9 @@ sidebar_position: 6
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/service/integration/auth/v1.0/users` | Create or get a user by email (for OTP flow) |
-| POST | `/service/integration/payment/v1/organization` | Create a new organization/company |
-| POST | `/service/integration/payment/v1/productAccounts` | Create a product account for billing |
+| POST | `LOGISTICS_API_PATH_USER` default `/service/integration/auth/v1.0/users` | Create or get a user by email |
+| POST | `LOGISTICS_API_PATH_ORGANIZATION` default `/service/integration/payment/v1/organization` | Create a new organization/company |
+| POST | `LOGISTICS_API_PATH_PRODUCT_ACCOUNTS` default `/service/integration/payment/v1/productAccounts` | Create/list product accounts |
 | GET | `/service/integration/payment/v1/productAccounts?ownerEmail={email}` | List product accounts by email |
 | POST | `/service/panel/authentication/v1.0/admin/oauth/token` | Obtain admin Bearer token (client credentials) |
 | POST | `/service/___/administrator/authorization/v1.0/extension/install` | Auto-install the Fynd extension for a company |
@@ -46,9 +46,9 @@ sidebar_position: 6
 
 **Purpose:** Create shipments, cancel shipments, manage FLP channels.
 
-**Base URL:** `config.get('flp_platform_api_base_url')`
+**Base URL:** `config.get('logistics_api.flp_platform_api.base_url')` (`FLP_PLATFORM_API_BASE_URL`)
 
-**Auth:** Bearer token (obtained from Fynd Central) + company-specific tokens
+**Auth:** `SHOPIFY_LOGISTICS_FLP_PLATFORM_AUTH_TOKEN` for platform-level operations plus company/application context as required.
 
 ### Endpoints Used
 
@@ -86,13 +86,15 @@ Events handled:
 - Shipment cancelled
 - Shipment returned
 
+The current route mount is `/webhook/flp/*`; see [Webhooks](../03-reference/webhooks.md) for exact paths.
+
 ---
 
 ## 3. Fynd Logistics Extension API
 
 **Purpose:** Configure delivery partners for a company's sales channel.
 
-**Base URL:** `config.get('logistics_extension_api_base_url')`
+**Base URL:** `config.get('logistics_api.extension_api.base_url')` (`LOGISTICS_EXTENSION_API_BASE_URL`)
 
 **Auth:** `LOGISTICS_EXTENSION_AUTH_TOKEN`
 
@@ -100,9 +102,9 @@ Events handled:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/v1.0/external/{extensionId}/service-plan-list` | Get available delivery partner service plans |
-| PUT | `/v1.0/external/company/{companyId}/application/{appId}/account/{accountId}` | Enable/update a delivery partner account |
-| POST | `/v1.0/external/company/1/application/{appId}/account` | Install a delivery partner (legacy) |
+| GET | `${LOGISTICS_EXTENSION_API_PATH}/.../service-plan-list` | Get available delivery partner service plans |
+| PUT | `${LOGISTICS_EXTENSION_API_PATH}/company/{companyId}/application/{appId}/account/{accountId}` | Enable/update a delivery partner account |
+| POST | `${LOGISTICS_EXTENSION_API_PATH}/company/{companyId}/application/{appId}/account` | Install a delivery partner account |
 
 ---
 
@@ -110,7 +112,7 @@ Events handled:
 
 **Purpose:** Check if a pincode is serviceable by a merchant's warehouse.
 
-**Base URL:** Part of the Fynd extension base URL.
+**Base URL:** `EXTENSION_BASE_URL` plus backend serviceability/controller paths.
 
 ### How It Works
 
@@ -139,7 +141,7 @@ Returns: {
 
 **Auth:** Shopify access token (stored in session) attached to every API call.
 
-**Library:** `@shopify/shopify-api` (REST and GraphQL clients)
+**Library:** The embedded app servers use Shopify's app packages; backend utilities/controllers call Shopify Admin REST/GraphQL with stored access tokens and service helpers.
 
 ### Operations Performed
 
@@ -153,7 +155,7 @@ Returns: {
 | Create fulfillment | GraphQL | Fulfillment |
 | Update fulfillment status | REST | After FLP webhook |
 | Create billing subscription | GraphQL | App install |
-| Create usage record | GraphQL | Billing cron |
+| Create/update app subscription data | GraphQL/webhook validation | Billing and subscription tracking |
 | Get app subscription | GraphQL | Billing check |
 | Create webhooks | REST | App install |
 | Create returns | GraphQL | Returns flow |
@@ -180,7 +182,7 @@ platformClient.order.getOrderById(orderId)
 platformClient.order.updateShipmentStatus(payload)
 ```
 
-The FDK extension handler (mounted at root in `index.js`) routes Fynd platform webhooks to registered handlers based on event type.
+The FDK extension handler is mounted at `/` in `index.js`, and `/api/v1/fynd/webhooks` calls `FDKExtension.webhookRegistry.processWebhook(req)`.
 
 ---
 
@@ -198,7 +200,7 @@ Used in logistics setup to calculate distances between warehouse locations and c
 
 ## Integration Error Handling
 
-All external API calls use a consistent pattern:
+External API error handling is not fully uniform. New integration code should use the shared HTTP helpers and structured logging pattern:
 
 ```javascript
 try {

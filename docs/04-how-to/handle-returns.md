@@ -7,7 +7,7 @@ sidebar_position: 5
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
@@ -65,42 +65,47 @@ Common ineligibility reasons:
 ```bash
 POST /logistics/returns
 Authorization: Bearer <session_token>
-
-{
-  "shop": "my-store.myshopify.com",
-  "orderId": "shopify-order-id",
-  "fulfillmentOrderId": "fo-id",
-  "reason": "damaged",
-  "items": [
-    { "lineItemId": "li-1", "quantity": 1 }
-  ]
-}
 ```
 
-Response:
-```json
-{
-  "success": true,
-  "data": {
-    "returnId": "RETURN-456",
-    "fyndReturnId": "FY-RET-789",
-    "status": "initiated",
-    "pickupDate": "2026-03-25"
-  }
-}
+The request body is built by `ReturnBlockExtension.jsx` from the per-fulfillment `returnQuantities` state, so a single call can create **multiple** returns across fulfillments. The response carries success/failed counts rather than a single return object — it is **not** a single-item `{ shop, orderId, fulfillmentOrderId, reason, items }` body.
+
+Return reasons are an enum (e.g. `SIZE_TOO_SMALL`, `SIZE_TOO_LARGE`, `UNWANTED`, `DEFECTIVE`, `WRONG_ITEM`, `NOT_AS_DESCRIBED`, `UNKNOWN`).
+
+After creating a return, the extension polls carrier-assignment status:
+
+```bash
+POST /logistics/returns/carrier-assignment-status
+Authorization: Bearer <session_token>
 ```
 
 ---
 
-## Return Status Flow
+## Return Status (Admin Extension)
 
-```mermaid
-flowchart TD
-    A[initiated] --> B[picked_up]
-    B --> C[received]
-    C --> D[completed]
-    C --> E[rejected]
-```
+The extension is carrier-assignment based. The row statuses (`ReturnBlockExtension.jsx` `ROW_STATUS`) are:
+
+| Extension status | Meaning |
+|------------------|---------|
+| `creating_return` | Return request submitted, being created |
+| `return_creation_failed` | Return creation failed |
+| `assigning_carrier` / `carrier_assignment_pending` (`not_trackable`) | Carrier assignment in progress |
+| `carrier_assigned` | Carrier assigned for pickup |
+| `carrier_assignment_failed` | Carrier assignment failed |
+
+> The persisted return lifecycle (status `initiated`/`processing`/`completed`/`failed`/`cancelled`, and `source` `merchant_initiated`/`customer_requested_approved`) is **backend-owned** — it lives in the MongoDB `returns` schema in `shopify-backend`. See the backend `database-schemas.md`. The extension status above reflects the in-UI creation + carrier-assignment flow, which is distinct from the persisted lifecycle.
+
+---
+
+## Customer-Requested Returns
+
+Returns are not only merchant-initiated. Four GraphQL return webhooks are registered on install (`fyndIntegration.js`), all with the `?app=fynd-logistics` suffix:
+
+- `returns/request` — customer requested a return
+- `returns/approve` — return request approved
+- `returns/decline` — return request declined
+- `returns/cancel` — return cancelled
+
+The backend reconciles these against the persisted `returns` records (e.g. `source = customer_requested_approved`).
 
 ---
 
@@ -140,18 +145,16 @@ sequenceDiagram
 
 ---
 
-## MongoDB Return Record
+## MongoDB Return Record (backend-owned)
 
-Returns are stored in the `returns` collection:
+Returns are persisted by `shopify-backend` in the `returns` collection. The schema (including the `status` enum `initiated` / `processing` / `completed` / `failed` / `cancelled` and the `source` enum `merchant_initiated` / `customer_requested_approved`) is owned by the backend — see `database-schemas.md` for the authoritative definition.
 
 ```json
 {
   "shop": "my-store.myshopify.com",
   "shopify_order_id": "order-123",
-  "fulfillment_order_id": "fo-456",
   "fynd_return_id": "FY-RET-789",
-  "status": "picked_up",
-  "reason": "damaged",
-  "items": [{ "lineItemId": "li-1", "quantity": 1 }]
+  "status": "processing",
+  "source": "merchant_initiated"
 }
 ```

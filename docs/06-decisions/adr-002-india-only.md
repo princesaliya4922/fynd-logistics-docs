@@ -8,7 +8,7 @@ sidebar_position: 2
 > **Status:** Accepted
 > **Owner:** Engineering — Fynd Extensions Team
 > **Date:** 2024 (reconstructed)
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
@@ -18,12 +18,12 @@ Fynd's logistics network and serviceability data are exclusively India-focused. 
 
 ## Decision
 
-Both apps check `shop.country_code === 'IN'` at startup via `RegionHandle.jsx`. Stores outside India see an error message and cannot access any features.
+Both embedded apps check `shop.country_code === 'IN'` at startup via `RegionHandle.jsx`. Stores outside India see an error message and cannot access the main app features.
 
 ## Where It's Enforced
 
 1. **Frontend:** `RegionHandle.jsx` in both apps — calls `GET /api/shop`, checks `country_code`
-2. **Backend:** `fyndIntegration.js` — checks country code before registering with Fynd backend
+2. **Install hooks:** each app's `web/fyndIntegration.js` checks country code before registering the store and creating app-specific webhooks
 
 ## Rationale
 

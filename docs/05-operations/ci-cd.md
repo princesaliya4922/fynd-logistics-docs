@@ -7,160 +7,155 @@ sidebar_position: 4
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
 ## Pipeline Overview
 
-All three projects use **Azure Pipelines** for CI/CD, with **GitLab CI** as an alternative.
+The current source-of-truth deployment pipeline is the **top-level monorepo pipeline**:
 
-**Pipeline file location in each repo:** `azure-pipelines.yml`
+```
+shopify-apps/
+└── azure-pipeline.yaml
+```
 
-The `fik-fynd-extensions` repo contains:
-- `azure-pipelines.yml` — FIK infrastructure deploy pipeline
-- `.gitlab-ci.yml` — GitLab CI alternative
-
----
-
-## CI Pipeline (Test + Build)
-
-Triggered on every push to feature branches and PRs:
+It is tag-triggered only:
 
 ```yaml
-stages:
-  - lint
-  - test
-  - build
-  - docker-build
-  - deploy-sit      # auto-deploy to SIT
+trigger:
+  tags:
+    include:
+      - "deploy.*"
+
+pr: none
 ```
 
-### Steps
+The pipeline extends `Infrastructure/kube-infrastructure` (`ref: fyndone`) and passes these monorepo parameters:
 
-1. **Lint** — `npm run lint`
-2. **Test** — `npm test` (Jest with coverage)
-3. **Build** — `npm run build` (frontend Vite build)
-4. **Docker Build** — Multi-stage Docker build (requires `AZURE_PRIVATE_TOKEN_BASE64`)
-5. **Push to Registry** — Docker image pushed to Azure Container Registry
-6. **Deploy to SIT** — Automatic deploy to `fyndz0`
+| Parameter | Current Value |
+|-----------|---------------|
+| `services` | `shopify-pincode-checker`, `shopify-logistics-app`, `shopify-backend` |
+| `servicePathPrefix` | `services` |
+| `serviceDockerfile` | `Dockerfile` |
+| `sonarKeyPrefix` | `fyndone:shopify-apps` |
+| `buildOnlyWhenChanged` | `true` |
+| `maxParallel` | `5` |
 
-### Private Package Authentication
-
-The Docker build requires Azure DevOps token to install private packages:
-```
---build-arg AZURE_PRIVATE_TOKEN_BASE64=$AZURE_PRIVATE_TOKEN_BASE64
-```
-
-This must be set as a secret variable in Azure Pipelines.
+Each service still has an `azure-pipelines.yml` file under its service directory from the pre-monorepo layout, but the root `azure-pipeline.yaml` is the active monorepo entry point.
 
 ---
 
-## CD Pipeline (Deploy)
+## Deployment Tags
 
-### Automatic Deploys
+Create deployment tags with:
 
-| Branch/Tag | Target Environment |
-|-----------|-------------------|
-| `main` (after merge) | SIT (`fyndz0`) |
-| `release/*` | UAT (`fyndz5`) |
-| Manual trigger | Production (`fynd/m2`) |
+```bash
+cd shopify-apps
+source scripts/tagdeploy.sh
+tagdeploy <env>
+```
 
-### Manual Production Deploy
+Examples:
 
-1. Go to Azure DevOps → Pipelines
-2. Find the relevant pipeline
-3. Click **Run pipeline**
-4. Select **Stage: deploy-production**
-5. Choose the image tag (from a successful UAT deploy)
-6. Click **Run**
+```bash
+tagdeploy cmlz0
+tagdeploy fynd
+tagdeploy cmlz0 --build-all
+tagdeploy cmlz0 --services shopify-backend,shopify-logistics-app
+```
+
+`tagdeploy.sh` behavior:
+
+| Env Type | Tag Format | Branch Guard |
+|----------|------------|--------------|
+| Production env names such as `fynd`, `jioecomm`, `tira`, `pixelbin` | `deploy.<env>` (force-updated) | Allows `master`, `master-opt`, `docker-master`, `GAR`, `kube` |
+| Other env names | `deploy.<env>.<timestamp>` | No production branch guard |
+
+Optional tag messages are used by the infrastructure template:
+
+| Option | Tag Message |
+|--------|-------------|
+| `--build-all` | `BuildAll: true` |
+| `--services <csv>` | `BuildServices: <csv>` |
 
 ---
 
-## FIK Deploy Configuration
+## Branch and Sync Workflow
 
-The `fik-fynd-extensions` repo controls the Kubernetes deployments. FIK reads configs from the environment folders and applies them.
+The monorepo keeps UAT and production snapshots in different branches and can sync from the legacy source repositories:
 
-### Pipeline Integration
-
-FIK integrations configured in `azure-pipelines.yml`:
-
-```yaml
-sentryConfigKey: fext
-pagerdutyConfigKey: fext
-newRelicConfigKey: fext
-grafanaConfigKey: fext
-newRelicEnabledEnvironments:
-  - fynd
-  - fyndx5
-  - fyndz6
-pagerdutyEnabledEnvironments:
-  - Fynd    # Production only
+```bash
+./scripts/sync_uat_services.sh
+./scripts/sync_production_services.sh
 ```
+
+| Monorepo Branch | Service | Legacy Source Branch |
+|-----------------|---------|----------------------|
+| `uat` | `shopify-logistics-app` | `uat` |
+| `uat` | `shopify-pincode-checker` | `sit` |
+| `uat` | `shopify-backend` | `uat` |
+| `production` | `shopify-logistics-app` | `production` |
+| `production` | `shopify-pincode-checker` | `master` |
+| `production` | `shopify-backend` | `production` |
+
+Typical workflow:
+
+1. Checkout `uat` or `production` in `shopify-apps`.
+2. Run the matching sync script if pulling changes from legacy repos.
+3. Review and commit the service snapshot changes.
+4. Push the branch.
+5. Create a `deploy.*` tag with `tagdeploy`.
 
 ---
 
-## Test Configuration
+## Local Test Commands
 
-### shopify-backend
+There is no root npm workspace command that runs every service. Run commands inside the relevant service directory.
 
-```json
-{
-  "jest": {
-    "collectCoverage": true,
-    "collectCoverageFrom": ["<rootDir>/routes/**/*.js"],
-    "coverageReporters": ["json-summary", "json"]
-  }
-}
-```
-
-Run with: `jest --detectOpenHandles --runInBand`
-- `--runInBand` ensures tests run sequentially (important for MongoDB connection management)
-- `--detectOpenHandles` helps identify resource leaks
-
-### shopify-pincode-checker / shopify-logistics-app
-
-Same Jest configuration. Tests in `spec/testFiles/`.
+| Service | Commands |
+|---------|----------|
+| `services/shopify-backend` | `npm test`, `npm run test:coverage`, `npm run lint`, `npm run create-indexes` |
+| `services/shopify-pincode-checker` | `npm test`, `npm run test:coverage`, `npm run build`, `npm run dev`, `npm run deploy` |
+| `services/shopify-pincode-checker/web` | `npm run dev`, `npm run serve` |
+| `services/shopify-logistics-app` | `npm test`, `npm run test:coverage`, `npm run build`, `npm run dev`, `npm run deploy` |
+| `services/shopify-logistics-app/web` | `npm run dev`, `npm run serve` |
 
 ---
 
 ## Shopify Extension Deployment
 
-Extensions (Checkout UI, Theme, Admin UI) are deployed separately from the app server:
+Shopify extensions are deployed through Shopify CLI from the relevant app service root:
 
 ```bash
-# Runs during the extension deploy pipeline step
-shopify app deploy
+cd services/shopify-pincode-checker
+npm run deploy
+
+cd ../shopify-logistics-app
+npm run deploy
 ```
 
-This command:
-1. Bundles all extension code
-2. Uploads to Shopify Partners platform
-3. Extensions become available to all stores that have the app installed
-
-**Important:** Extension deploys do NOT require app reinstallation by merchants. The new extension code is fetched automatically by Shopify.
+`npm run deploy` maps to `shopify app deploy`. Extension deploys update Shopify-hosted extension assets and do not require merchants to reinstall the app.
 
 ---
 
 ## Deployment Verification
 
-After any deploy:
+After a deploy:
 
 ```bash
-# 1. Check health
-curl https://shopify-backend.extensions.fynd.com/_healthz
-
-# 2. Check readiness
-curl https://shopify-backend.extensions.fynd.com/_readyz
-
-# 3. Check Swagger docs loaded
+curl -i https://shopify-backend.extensions.fynd.com/
 curl -I https://shopify-backend.extensions.fynd.com/api-docs
-
-# 4. Check Sentry for new errors (first 15 min post-deploy)
 ```
+
+Current backend behavior:
+
+- `GET /` returns `200 OK` HTML.
+- `/_healthz` and `/_readyz` are not implemented and return the standard 404 JSON.
+- Check Sentry, New Relic, Grafana/Prometheus files, Kubernetes logs, and the Shopify app install/extension flows for functional verification.
 
 ---
 
 ## Rollback Process
 
-See [Operations → Rollback](./rollback.md) for rollback procedures.
+See [Operations -> Rollback](./rollback.md) for rollback procedures.

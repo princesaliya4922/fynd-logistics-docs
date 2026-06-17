@@ -7,26 +7,26 @@ sidebar_position: 1
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Draft
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
 ## Test Framework
 
-All three projects use **Jest** for testing.
+All three services use **Jest** for root-level tests. The logistics service also has Vitest installed in its dependency tree, but the checked package scripts still use Jest.
 
-| Project | Jest Version | Config Location |
-|---------|-------------|----------------|
-| shopify-backend | 29.7.0 | `package.json` |
-| shopify-pincode-checker | (root package) | `package.json` |
-| shopify-logistics-app | (root package) | `package.json` |
+| Service Path | Test Script | Coverage Script |
+|--------------|-------------|-----------------|
+| `services/shopify-backend` | `npm test` | `npm run test:coverage` |
+| `services/shopify-pincode-checker` | `npm test` | `npm run test:coverage` |
+| `services/shopify-logistics-app` | `npm test` | `npm run test:coverage` |
 
 ---
 
 ## Running Tests
 
 ```bash
-# Run all tests
+# Run tests from a service root
 npm test
 
 # Run with coverage
@@ -42,6 +42,8 @@ Test flags used:
 
 ---
 
+There is no monorepo-root npm workspace command for running all service tests.
+
 ## Coverage Configuration
 
 ### shopify-backend
@@ -56,7 +58,7 @@ Test flags used:
 }
 ```
 
-Coverage is collected **only for route files** (not services, models, or utils). Output: `coverage_output.json`.
+Coverage is collected primarily for route files, then backend coverage tooling runs `spec/testUtilites/nodeVersionCheck.js` and `spec/testUtilites/saveCoverageData.js`.
 
 ### Frontend Apps
 
@@ -119,10 +121,11 @@ test('returns 401 for invalid session token', async () => {
 
 See [Quality → Known Gaps](./known-gaps.md) for the full picture.
 
-The most critical areas lacking tests:
-- `fulfilmentService.js` (186KB — core fulfillment engine)
-- `shopifyWebhookService.js` (64KB — webhook processing)
-- `logisticsService.js` (the largest service file)
+- `fulfilmentService.js` / fulfillment processors
+- `shopifyWebhookService.js`
+- `logisticsService.js`
+- Billing cron and Shopify usage-record behavior
+- Admin OTP auth / CSRF / origin middleware
 - All frontend React components
 
 ---

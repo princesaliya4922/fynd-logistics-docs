@@ -7,7 +7,7 @@ sidebar_position: 2
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Active
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 Known issues, missing documentation, and technical debt items.
 
@@ -21,6 +21,7 @@ Known issues, missing documentation, and technical debt items.
 | `shopifyWebhookService.js` | No tests | High — webhook processing not tested |
 | Frontend React components (all 3 apps) | No tests | Medium — UI regressions not caught |
 | Billing cron (`cron/index.js`) | No tests | High — billing correctness not verified |
+| Admin OTP auth and CSRF middleware | No focused tests documented | High — protects internal logistics admin APIs |
 | `spec/testFiles/registration.test.js` | Placeholder only | Low — just a template |
 
 **Recommendation:** Start with integration tests for the most critical paths:
@@ -37,6 +38,7 @@ Known issues, missing documentation, and technical debt items.
 | Reference → API Backend | Full request/response schemas for each endpoint |
 | Reference → Webhooks | Exact FDK webhook topics/payload contracts by event type |
 | Operations → Environments | Runtime source-of-truth drift between Shopify app TOML and FIK overlays for Logistics environments |
+| Data Pipeline | Active `shopify_backend` transformation path was not found in the local `transformations` checkout |
 
 ---
 
@@ -49,6 +51,8 @@ Known issues, missing documentation, and technical debt items.
 | `Instruction.jsx` | `components/Instruction.jsx` | Component exists but is unused in Promise app |
 | Legacy `companySelection/` | `shopify-logistics-app/web/frontend/components/companySelection/` | Legacy components alongside new `setting/` components |
 | Test mode billing | `billing.js` | Test mode logic should use env var cleanly |
+| Billing cron query drift | `controllers/billing.js` / `model/subscriptions.js` / `model/orders.js` | Cron filters uppercase `ACTIVE` while model status values are lowercase, and order counting references fields that do not exist on the current order model |
+| Dead OTP route file | `routes/otpRoutes.js` | File exists but is not mounted by `index.js`; real OTP/account-linking routes live in `routes/logisticsRoutes.js` |
 
 ---
 
@@ -67,7 +71,7 @@ Known issues, missing documentation, and technical debt items.
 |------|-------------|
 | `BYPASS_SSL_VALIDATION` | This flag disables TLS verification. Must NEVER be enabled in production. |
 | `.env` in dev repos | Developer must be careful not to commit `.env` files (gitignore protects against accidental adds) |
-| Admin panel password | Served at `/logistics/admin` — uses basic auth over HTTPS |
+| Admin dashboard auth | `/logistics/admin` now uses OTP/session/CSRF/origin checks; keep `ADMIN_ALLOWED_EMAILS` and OTP/session settings configured in every deployed env |
 
 ---
 

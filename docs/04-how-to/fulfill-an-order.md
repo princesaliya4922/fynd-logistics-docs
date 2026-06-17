@@ -7,7 +7,7 @@ sidebar_position: 3
 
 > **Owner:** Engineering — Fynd Extensions Team
 > **Status:** Approved
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
@@ -56,9 +56,13 @@ sequenceDiagram
 If an order wasn't fulfilled automatically (e.g., webhook was missed, or logistics was disabled):
 
 1. Go to **Shopify Admin → Orders** → open the order
-2. Find the **Fynd Fulfillment** block
-3. Click **Fulfill Order** button
-4. The backend will process the fulfillment immediately
+2. Find the **Fynd Fulfillment** block (`fullfillment-extension/BlockExtension.jsx`)
+3. Trigger fulfillment — the block calls `POST /logistics/fulfill/fulfillment`
+4. The backend processes the fulfillment and the block polls carrier-assignment status
+
+There is also an **order-details action** and an **order-index bulk action** (the `order-fullfilment` extension's `ActionExtension.jsx` / `OrdersIndexExtension.jsx`) that fulfill via `POST /logistics/fulfill/orders/bulk`.
+
+> Note: `POST /logistics/fulfill/orders/:orderId` does **not** exist. Single-order fulfillment goes through `POST /logistics/fulfill/fulfillment`.
 
 ---
 
@@ -67,18 +71,19 @@ If an order wasn't fulfilled automatically (e.g., webhook was missed, or logisti
 ```mermaid
 flowchart TD
     A[Merchant/Admin action] --> B{Trigger type}
-    B -- Single --> C[POST /logistics/fulfill/orders/:orderId]
-    B -- Bulk --> D[POST /logistics/fulfill/orders/bulk]
+    B -- Single (order block) --> C[POST /logistics/fulfill/fulfillment]
+    B -- Bulk / action ext --> D[POST /logistics/fulfill/orders/bulk]
     C --> E[Same fulfillment pipeline as webhook path]
     D --> E
-    E --> F[Create/update shipments in Mongo]
+    E --> F[Create/update shipments in backend]
+    F --> G[Poll POST /logistics/fulfill/fulfillment/carrier-assignment-status]
 ```
 
 ---
 
 ## Bulk Fulfillment (via API)
 
-For bulk operations (useful for ops/admin scenarios):
+For bulk operations (order-index selection action and order-details action):
 
 ```bash
 POST /logistics/fulfill/orders/bulk
@@ -91,45 +96,32 @@ Authorization: Bearer <session_token>
 
 ---
 
-## Fulfillment Status Reference
+## Fulfillment Status Reference (Admin Extension)
 
-| Status | Meaning |
-|--------|---------|
-| `queued` | Order received, fulfillment queued |
-| `processing` | Shipment created with FLP, awaiting pickup |
-| `fulfilled` | Delivered to customer |
-| `error` | Fulfillment failed — see error_details in shipment |
-| `cancelled` | Order or fulfillment was cancelled |
+The order-block extension is **carrier-assignment based**. The row status the merchant sees is derived from the fulfillment-order state plus polling carrier-assignment status — not a `queued`/`processing`/`fulfilled` lifecycle.
 
-**FLP → Shopify status mapping:**
+| Extension status (`ROW_STATUS` / carrier states) | Meaning |
+|---------------------------------------------------|---------|
+| fulfillment-order `OPEN` | Not yet fulfilled via Fynd |
+| `creating_shipment` | Fulfillment request submitted, shipment being created |
+| `shipment_creation_failed` | Shipment creation failed |
+| `assigning_carrier` / `carrier_assignment_pending` (`not_trackable`) | Carrier assignment in progress / not yet trackable |
+| `carrier_assigned` | Carrier assigned (AWB/tracking available) |
+| `carrier_assignment_failed` | Carrier assignment failed |
+| `error` | Generic failure |
 
-| FLP Status | Shopify Shows |
-|-----------|--------------|
-| `bag_picked` | In transit |
-| `out_for_delivery` | In transit |
-| `delivered` | Fulfilled |
-| `rto_initiated` | Failed |
-| `cancelled` | Cancelled |
+**FLP → Shopify failure milestones (backend-owned):**
+
+The mapping from FLP/internal milestones to Shopify fulfillment events lives in `shopify-backend` (`utils/shopifyFulfillmentEventMap.js`, `flpWebhookHelpers.js`). For example, an internal `rto` milestone maps to a Shopify `FAILURE` event with a `statusReason` field. The detailed milestone → Shopify event table is backend-owned; see the backend docs for the authoritative mapping.
 
 ---
 
-## Fulfillment Processing Modes
+## Fulfillment Processing Modes (backend-owned)
 
-The backend supports two modes:
+> The fulfillment pipeline (sync vs. background processing, retries, and `FULFILLMENT_PROCESSING_MODE=memory-queue`) runs entirely in `shopify-backend` — it is **not** part of this app. The behavior below is backend behavior, documented here for context; treat the backend docs as the source of truth.
 
-### Sync Mode (default)
-
-- Fulfillment happens inline during the webhook request
-- If FLP call times out (default 60s), the order is retried up to 3 times
-- Retries use exponential backoff (1s → 2s → 4s)
-
-### Memory Queue Mode
-
-Enable with: `FULFILLMENT_PROCESSING_MODE=memory-queue`
-
-- Webhook returns immediately; fulfillment happens in background worker thread
-- Better for high-order-volume stores
-- Jobs have: state tracking, retry logic, graceful shutdown
+- **Sync mode (default):** fulfillment happens inline during the webhook request, with retry on FLP timeout.
+- **Memory-queue mode** (`FULFILLMENT_PROCESSING_MODE=memory-queue`): the webhook returns immediately and fulfillment runs in a background worker.
 
 ---
 
@@ -137,26 +129,21 @@ Enable with: `FULFILLMENT_PROCESSING_MODE=memory-queue`
 
 ### Via Admin Extension
 
-Open the order in Shopify Admin → see the **Fynd Fulfillment** block.
+Open the order in Shopify Admin → see the **Fynd Fulfillment** block. The block reads fulfillment orders and polls carrier-assignment status (there is no single status endpoint).
 
 ### Via API
 
 ```bash
-GET /logistics/fulfill/orders/:orderId/fulfillment-status
+# 1. Read fulfillment orders + their state
+GET /logistics/fulfill/orders/:orderId/fulfillment-orders
+Authorization: Bearer <session_token>
+
+# 2. Poll carrier-assignment status after a fulfillment is created
+POST /logistics/fulfill/fulfillment/carrier-assignment-status
 Authorization: Bearer <session_token>
 ```
 
-Response:
-```json
-{
-  "fulfillmentOrderId": "fo-123",
-  "status": "fulfilled",
-  "fyndShipmentId": "FY-SHIP-456",
-  "awbNo": "1234567890",
-  "dpName": "Delhivery",
-  "trackingUrl": "https://track.delhivery.com/..."
-}
-```
+> There is no `GET .../:orderId/fulfillment-status` endpoint. Status is derived from `fulfillment-orders` plus carrier-assignment polling.
 
 ---
 
@@ -178,36 +165,39 @@ Response includes pre-signed URLs to download PDF documents.
 
 ---
 
-## Free Plan Limits
+## Plan Limits (backend-owned)
 
-If you're on the **Free plan**:
-- Maximum **50 fulfillments per month**
-- After 50, the API returns `HTTP 402` with `LIMIT_EXCEEDED`
-- To continue, upgrade to Growth plan via the Pricing page
+> Plan/limit enforcement is implemented in `shopify-backend`, **not** in this app — the app's `/api/plan` and `/api/billing` endpoints are pass-throughs. Documented here for context only.
 
-The limit resets at the start of each billing cycle (every 7 days per billing cron).
+- Plans are **FREE** / **PAID**.
+- The **FREE** plan limit is **5** fulfillments.
+- When the limit is exceeded, the backend returns **HTTP 403**.
+- To continue, upgrade via the Pricing page.
+
+(The exact limit values and reset cadence are backend/billing-config values — see the backend billing config for the source of truth.)
 
 ---
 
 ## Troubleshooting Failed Fulfillments
 
-1. Check the shipment record:
+1. Check the fulfillment-order state and carrier-assignment status:
    ```bash
-   GET /logistics/fulfill/orders/:orderId/status
+   GET /logistics/fulfill/orders/:orderId/fulfillment-orders
+   POST /logistics/fulfill/fulfillment/carrier-assignment-status
    ```
-   Look at `error_details` field.
+   Look for `shipment_creation_failed` / `carrier_assignment_failed` / `error` states.
 
 2. Common errors:
    | Error | Cause | Fix |
    |-------|-------|-----|
    | `FLP_CREATE_FAILED` | FLP API returned error | Check FLP Platform status |
    | `LOCATION_NOT_MAPPED` | Shopify location not mapped to Fynd | Complete location setup |
-   | `LIMIT_EXCEEDED` | Free plan limit reached | Upgrade plan |
+   | FREE-plan limit (HTTP 403) | Free plan limit reached (backend-enforced) | Upgrade plan |
    | `LOGISTICS_DISABLED` | Logistics is disabled for shop | Enable via admin panel |
 
 3. To retry a failed fulfillment:
-   - Via Admin Extension: click "Retry" button
-   - Via API: `POST /logistics/fulfill/orders/:orderId` (re-triggers fulfillment)
+   - Via Admin Extension: click "Retry" — re-invokes `POST /logistics/fulfill/fulfillment`
+   - Retry re-uses the same `POST /logistics/fulfill/fulfillment` endpoint
 
 ---
 

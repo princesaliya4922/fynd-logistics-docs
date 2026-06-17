@@ -8,7 +8,7 @@ sidebar_position: 1
 > **Status:** Accepted
 > **Owner:** Engineering — Fynd Extensions Team
 > **Date:** 2024 (reconstructed)
-> **Last Updated:** 2026-03-23
+> **Last Updated:** 2026-06-17
 
 ---
 
@@ -22,8 +22,8 @@ The `@shopify/shopify-app-express` library supports multiple session storage bac
 
 | App | Session Storage | Library |
 |-----|----------------|---------|
-| shopify-pincode-checker (Promise) | SQLite | `@shopify/shopify-app-session-storage-sqlite` |
-| shopify-logistics-app (Logistics) | Redis | `@shopify/shopify-app-session-storage-redis` |
+| `services/shopify-pincode-checker` (Promise) | SQLite | `@shopify/shopify-app-session-storage-sqlite` |
+| `services/shopify-logistics-app` (Logistics) | Redis | `@shopify/shopify-app-session-storage-redis` |
 
 ## Rationale
 
@@ -41,6 +41,8 @@ The `@shopify/shopify-app-express` library supports multiple session storage bac
 - SQLite would create race conditions with multiple replicas reading/writing the same file
 - The backend already uses Redis for caching, so adding sessions there adds minimal complexity
 - Session prefix `shopify_logistics_session_*` makes cleanup on app uninstall simple
+
+The shared `services/shopify-backend` process also initializes Redis for backend runtime/cache usage and cron startup, but it does not own the Promise app's SQLite OAuth session store.
 
 ## Consequences
 
